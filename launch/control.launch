@@ -1,0 +1,4 @@
+<launch>
+    <!-- turtlebot controller -->
+    <node pkg="switch_vis_exp" type="turtlebot_control.py" name="turtlebot_control" output="screen" />
+</launch>

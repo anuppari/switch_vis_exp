@@ -1,0 +1,18 @@
+<launch>
+  <!-- Launch Parameters -->
+  <arg name="cameraName" value="camera" />
+  <arg name="usePredictor" value="true" />
+  <arg name="switching" value="true" />
+  
+  <!-- Estimator -->
+  <node name="exp" pkg="switch_vis_exp" type="exp_node" output="screen" >
+    <param name="camera" value="$(arg cameraName)" />
+    <param name="usePredictor" value="$(arg usePredictor)" />
+    <param name="switching" value="$(arg switching)" />
+    <param name="deadReckoning" value="true" />
+    <param name="visibilityTimeout" value="0.2" />
+    <param name="k1" value="20.0" />
+    <param name="k2" value="20.0" />
+    <param name="k3" value="2.0" />
+  </node>
+</launch>

@@ -1,0 +1,366 @@
+#!/usr/bin/env python
+
+import rospy
+import tf
+import threading
+import itertools
+import numpy as np
+import cv2
+from aruco_ros.msg import Center
+from sensor_msgs.msg import CameraInfo
+from geometry_msgs.msg import PointStamped, TwistStamped
+from switch_vis_exp.msg import Output, Velocity, Debug
+
+qMult = tf.transformations.quaternion_multiply # quaternion multiplication function handle
+qInv = tf.transformations.quaternion_inverse # quaternion inverse function handle
+q2m = tf.transformations.quaternion_matrix # quaternion to 4x4 transformation matrix
+
+# Globals
+k1 = 4.0
+k2 = 4.0
+k3 = 4.0
+markerID = 100
+obj_name = "ugv0"
+onDuration = np.array([3,5])
+offDuration = np.array([0.5,2])
+lock = threading.Lock()
+
+# Main node
+def exp():
+    global alpha, lastImageTime, lastVelTime, y1hat, y2hat, y3hat, y1last, y2last
+    global estimatorOn, usePredictor, augmentedObserver, opticFlow, visibilityTimout
+    global camMat
+    global pub, camSub, tfl, pointPub, debugPub, watchdogTimer
+    
+    # Init node
+    rospy.init_node('exp')
+    
+    # Estimator parameter initializations
+    alpha = 0.5
+    y1hat = 0
+    y2hat = 0
+    y3hat = 0.1
+    y1last = 0
+    y2last = 0
+    lastImageTime = rospy.get_time()
+    lastVelTime = lastImageTime
+    camMat = None
+    estimatorOn = True
+    
+    # Node parameters
+    nodeName = rospy.get_name()
+    usePredictor = rospy.get_param(nodeName+"/usePredictor",True)
+    switching = rospy.get_param(nodeName+"/switching",False)
+    augmentedObserver = rospy.get_param(nodeName+"/augmentedObserver",False)
+    opticFlow = rospy.get_param(nodeName+"/opticFlow",True)
+    visibilityTimout = rospy.get_param(nodeName+"/visibilityTimout",0.2)
+    
+    # Camera info
+    cameraName = rospy.get_param(nodeName+"/camera","camera")
+    camSub = rospy.Subscriber(cameraName+"/camera_info",CameraInfo,camInfoCB)
+    
+    # wait until camera info recieved
+    while (camMat is None) and (not rospy.is_shutdown()):
+        rospy.loginfo("Waiting for camera parameters...")
+        rospy.sleep(1)
+    
+    # Output publishers
+    pub = rospy.Publisher("output",Output,queue_size=10)
+    pointPub = rospy.Publisher("output_point",PointStamped,queue_size=10)
+    debugPub = rospy.Publisher("debug",Debug,queue_size=10)
+    
+    # Subscribers for feature and velocity data
+    #velSub = rospy.Subscriber("filter", Velocity, velCB)
+    velSub = rospy.Subscriber("/ugv0/local_vel", TwistStamped, velCB,queue_size=1)
+    #camVelSub = rospy.Subscriber("/image/local_vel",TwistStamped,camVelCB,queue_size=1);
+    tfl = tf.TransformListener()
+    featureSub = rospy.Subscriber("markerCenters", Center, featureCB)
+    
+    # Initialize feature visibility watchdog
+    watchdogTimer = rospy.Timer(rospy.Duration.from_sec(5),timeout,oneshot=True)
+    
+    # Spin until shutdown
+    rospy.spin()
+
+
+# Watchdog for feature leaving FOV
+def timeout(event):
+    global estimatorOn
+    estimatorOn = False
+
+
+# Callback for getting camera intrinsic parameters and then unsubscribing
+def camInfoCB(camInfo):
+    global distCoeffs, camMat
+    
+    distCoeffs = np.array(camInfo.D,dtype=np.float32)
+    camMat = np.array(camInfo.K,dtype=np.float32).reshape((3,3))
+    
+    print distCoeffs
+    print camMat
+    rospy.loginfo("Got camera parameters!")
+    camSub.unregister()
+
+
+# Callback for getting target velocity and acceleration data
+# Also propagates state estimates forward during prediction phases
+def velCB(velData):
+    global vTt, wGTt, vdotTt, velTimeBuffer
+    global  y1hat, y2hat, y3hat, lastVelTime, lastImageTime
+    global y1last, y2last, alpha
+    
+    # Time
+    timeStamp = velData.header.stamp #rospy.Time.now()
+    timeNow = float(timeStamp.secs) + float(timeStamp.nsecs)/float(1e9)
+    delT = timeNow - lastVelTime
+    lastVelTime = timeNow
+    
+    lock.acquire()
+    try:
+        # Target velocities and accelerations, expressed in target coordinate system
+        #vTt = np.array(velData.vel)
+        #wGTt = np.array(velData.w)
+        #vdotTt = np.array(velData.acc)
+        vTt = np.array([velData.twist.linear.x,velData.twist.linear.y,velData.twist.linear.z])
+        wGTt = np.array([velData.twist.angular.x,velData.twist.angular.y,velData.twist.angular.z])
+        vdotTt = np.zeros(3)
+    finally:
+        lock.release()
+    
+    if not estimatorOn:
+        # Transform
+        print "here1"
+        tfl.waitForTransform('image',obj_name,timeStamp,rospy.Duration(1000.0))
+        print "here2"
+        (trans,quat) = tfl.lookupTransform('image',obj_name,timeStamp)
+        
+        # Ground truth
+        (y1,y2,y3) = (trans[0]/trans[2],trans[1]/trans[2],1.0/trans[2])
+        
+        # Target velocities/accelerations, expressed in image coordinate system
+        vT = rotateVec(vTt,quat)
+        wGT = rotateVec(wGTt,quat)
+        vdotT = rotateVec(vdotTt,quat)
+        
+        # Update so that delT in featureCB is reasonable after switch
+        lastImageTime = timeNow
+        
+        if usePredictor:
+            vq = vT
+            w = np.zeros(3)
+            vc = np.zeros(3)
+            
+            # Work with scalars to match notation in papers
+            (vq1,vq2,vq3) = (vq[0],vq[1],vq[2])
+            (w1,w2,w3) = (w[0],w[1],w[2])
+            (vc1,vc2,vc3) = (vc[0],vc[1],vc[2])
+            
+            # Predictor
+            Omega1 = w3*y2hat - w2 - w2*np.power(y1hat,2) + w1*y1hat*y2hat
+            Omega2 = w1 - w3*y1hat - w2*y1hat*y2hat + w1*np.power(y2hat,2)
+            xi1 = (vc3*y1hat - vc1)*y3hat
+            xi2 = (vc3*y2hat - vc2)*y3hat
+            
+            y1hatDot = Omega1 + xi1 + vq1*y3hat - y1hat*vq3*y3hat
+            y2hatDot = Omega2 + xi2 + vq2*y3hat - y2hat*vq3*y3hat
+            y3hatDot = (vc3-vq3)*np.power(y3hat,2) - (y1hat*w2 - y2hat*w1)*y3hat
+            
+        else:
+            # Zero order hold if no predictor
+            (y1hatDot,y2hatDot,y3hatDot) = (0,0,0)
+            
+        # State Update
+        y1hat += y1hatDot*delT
+        y2hat += y2hatDot*delT
+        y3hat += y3hatDot*delT
+        
+        if opticFlow:
+            # Update for optic flow
+            y1last = y1
+            y2last = y2
+        else:
+            # Update alpha
+            b = vT
+            (b1,b2,b3) = (b[0],b[1],b[2])
+            beta = k3*(b1*y1hat + b2*y2hat - b3*(np.power(y1hat,2)+np.power(y2hat,2))/2.0)
+            alpha = y3hat - beta
+        
+        # Publish output
+        outMsg = Output()
+        outMsg.header.stamp = timeStamp
+        outMsg.y = [y1,y2,y3]
+        outMsg.yhat = [y1hat,y2hat,y3hat]
+        outMsg.error = [y1-y1hat,y2-y2hat,y3-y3hat]
+        outMsg.XYZ = [y1/y3, y2/y3, 1.0/y3]
+        outMsg.XYZhat = [y1hat/y3hat, y2hat/y3hat, 1.0/y3hat]
+        outMsg.XYZerror = [y1/y3-y1hat/y3hat, y2/y3-y2hat/y3hat, 1.0/y3-1.0/y3hat]
+        outMsg.estimatorOn = False
+        outMsg.usePredictor = usePredictor
+        pub.publish(outMsg)
+        
+        # Publish point
+        pntMsg = PointStamped()
+        pntMsg.header.stamp = timeStamp
+        pntMsg.header.frame_id = 'image'
+        pntMsg.point.x = y1hat/y3hat
+        pntMsg.point.y = y2hat/y3hat
+        pntMsg.point.z = 1.0/y3hat
+        pointPub.publish(pntMsg)
+
+
+def camVelCB(twist):
+    pass
+
+
+# Callback for getting feature point data and update range estimates
+def featureCB(data):
+    global alpha, lastImageTime
+    global y1hat, y2hat, y3hat
+    global y1last, y2last
+    global watchdogTimer, estimatorOn
+    
+    # Disregard erroneous tag tracks
+    if not (data.header.frame_id == str(markerID)):
+        return
+    
+    # Feature in FOV
+    watchdogTimer.shutdown()
+    estimatorOn = True
+    
+    # time
+    timeStamp = data.header.stamp
+    timeNow = float(timeStamp.secs) + float(timeStamp.nsecs)/float(1e9)
+    delT = timeNow - lastImageTime
+    lastImageTime = timeNow
+    
+    # Object pose w.r.t. image frame
+    tfl.waitForTransform('image',obj_name,timeStamp,rospy.Duration(0.1))
+    (trans,quat) = tfl.lookupTransform('image',obj_name,timeStamp)
+    
+    # Undistort image coordinates. RETURNS NORMALIZED EUCLIDEAN COORDINATES
+    undistPoints = np.squeeze(cv2.undistortPoints(np.array([[[data.x,data.y]]],dtype=np.float32),camMat,distCoeffs))
+    y1 = undistPoints[0]
+    y2 = undistPoints[1]
+    
+    # Get ground truth from marker
+    y3 = 1.0/trans[2]
+    
+    lock.acquire()
+    try:
+        # Target velocities/accelerations, expressed in image coordinate system
+        vT = rotateVec(vTt,quat)
+        wGT = rotateVec(wGTt,quat)
+        vdotT = rotateVec(vdotTt,quat)
+        
+        # Values specific to experiment
+        b = vT
+        w = np.zeros(3)
+        bdot = vdotT + np.cross(wGT,vT)
+    finally:
+        lock.release()
+    
+    # Work with scalars to match notation in papers
+    (b1,b2,b3) = (b[0],b[1],b[2])
+    (w1,w2,w3) = (w[0],w[1],w[2])
+    (b1dot,b2dot,b3dot) = (bdot[0],bdot[1],bdot[2])
+    
+    # Estimator
+    h1 = b1 - y1*b3
+    h2 = b2 - y2*b3
+    p1 = -y1*y2*w1 + (1+np.power(y1,2))*w2 - y2*w3
+    p2 = -(1+np.power(y2,2))*w1 + y1*y2*w2 + y1*w3
+    
+    # Augmented observer filters y1 and y2
+    if augmentedObserver:
+        e1 = y1 - y1hat
+        e2 = y2 - y2hat
+        
+        y1hatDot = h1*y3hat + p1 + k1*e1
+        y2hatDot = h2*y3hat + p2 + k2*e2
+        
+        y1hat = y1hat + y1hatDot*delT
+        y2hat = y2hat + y2hatDot*delT
+    else:
+        (y1hat,y2hat) = (y1,y2)
+        e1 = y1 - y1hat
+        e2 = y2 - y2hat
+    
+    if opticFlow:
+        # Optical flow
+        y1dot = (y1-y1last)/delT
+        y2dot = (y2-y2last)/delT
+        y1last = y1
+        y2last = y2
+        
+        # Update state
+        y3hatDot = -b3*np.power(y3hat,2) + (y1*w2-y2*w1)*y3hat - k3*(np.power(h1,2)+np.power(h2,2))*y3hat + k3*h1*(y1dot-p1) + k3*h2*(y2dot-p2) + h1*e1 + h2*e2
+        y3hat = y3hat + y3hatDot*delT
+    else:
+        # Update auxiliary state
+        beta = k3*(b1*y1 + b2*y2 - b3*(np.power(y1,2)+np.power(y2,2))/2.0)
+        y3hat = alpha + beta
+        
+        alphaDot = -b3*np.power(y3hat,2) + (y1*w2-y2*w1)*y3hat - k3*((np.power(h1,2)+np.power(h2,2))*y3hat + h1*p1 + h2*p2 + y1*b1dot + y2*b2dot - b3dot*(np.power(y1,2)+np.power(y2,2))/2.0) + h1*e1 + h2*e2
+        alpha = alpha + alphaDot*delT
+    
+    # Debug Publisher
+    dbgMsg = Debug()
+    dbgMsg.header.stamp = timeStamp
+    dbgMsg.y1 = y1
+    dbgMsg.y2 = y2
+    dbgMsg.XYZ = [y1/y3, y2/y3, 1.0/y3]
+    dbgMsg.c2mPos = trans
+    dbgMsg.c2mQuat = quat
+    dbgMsg.vTt = vTt
+    dbgMsg.wGTt = wGTt
+    dbgMsg.vdotTt = vdotTt
+    dbgMsg.vT = vT
+    dbgMsg.wGT = wGT
+    dbgMsg.vdotT = vdotT
+    dbgMsg.b = b
+    dbgMsg.w = w
+    dbgMsg.bdot = bdot
+    dbgMsg.h1 = h1
+    dbgMsg.h2 = h2
+    dbgMsg.p1 = p1
+    dbgMsg.p2 = p2
+    dbgMsg.y3hat = y3hat
+    if not opticFlow:
+        dbgMsg.beta = beta
+        dbgMsg.alphaDot = alphaDot
+        dbgMsg.alpha = alpha
+    debugPub.publish(dbgMsg)
+    
+    # Publish output
+    outMsg = Output()
+    outMsg.header.stamp = timeStamp
+    outMsg.y = [y1,y2,y3]
+    outMsg.yhat = [y1hat,y2hat,y3hat]
+    outMsg.error = [y1-y1hat,y2-y2hat,y3-y3hat]
+    outMsg.XYZ = [y1/y3, y2/y3, 1.0/y3]
+    outMsg.XYZhat = [y1hat/y3hat, y2hat/y3hat, 1.0/y3hat]
+    outMsg.XYZerror = [y1/y3-y1hat/y3hat, y2/y3-y2hat/y3hat, 1.0/y3-1.0/y3hat]
+    outMsg.estimatorOn = True
+    outMsg.usePredictor = usePredictor
+    pub.publish(outMsg)
+    
+    # Publish point
+    pntMsg = PointStamped()
+    pntMsg.header.stamp = timeStamp
+    pntMsg.header.frame_id = 'image'
+    pntMsg.point.x = y1hat/y3hat
+    pntMsg.point.y = y2hat/y3hat
+    pntMsg.point.z = 1.0/y3hat
+    pointPub.publish(pntMsg)
+    
+    # Set timer to check if feature left FOV
+    watchdogTimer = rospy.Timer(rospy.Duration.from_sec(visibilityTimout),timeout,oneshot=True)
+
+
+def rotateVec(p,q):
+    return qMult(q,qMult(np.append(p,0),qInv(q)))[0:3]
+
+
+if __name__ == '__main__':
+    exp()
+

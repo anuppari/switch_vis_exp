@@ -1,0 +1,24 @@
+Header header
+
+float64 y1
+float64 y2
+float64[3] XYZ
+float64[3] c2mPos
+float64[4] c2mQuat
+float64[3] vTt
+float64[3] wGTt
+float64[3] vdotTt
+float64[3] vT
+float64[3] wGT
+float64[3] vdotT
+float64[3] b
+float64[3] w
+float64[3] bdot
+float64 h1
+float64 h2
+float64 p1
+float64 p2
+float64 beta
+float64 y3hat
+float64 alphaDot
+float64 alpha
