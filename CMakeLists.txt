@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   geometry_msgs
   image_geometry
+  message_generation
 )
 
 ## System dependencies are found with CMake's conventions
@@ -97,6 +98,7 @@ catkin_package(
 #  LIBRARIES switch_vis_exp
 #  CATKIN_DEPENDS rospy
 #  DEPENDS system_lib
+  CATKIN_DEPENDS message_runtime
 )
 
 ###########
