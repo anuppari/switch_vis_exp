@@ -75,7 +75,9 @@ public:
 		pos_buff.segment<3>(pInd) << pose->pose.position.x, pose->pose.position.y, pose->pose.position.z;
 		Vector4d q;
 		q << pose->pose.orientation.x, pose->pose.orientation.y, pose->pose.orientation.z, pose->pose.orientation.w;
-		if (q(3) < 0) // deal with equivalent quaternions
+		int lastQind = (qInd + (4*window_size-4))%(4*window_size); // decrement with rollover. Can't do (qInd - 4)%(4*window_size), it results in negative number
+		Vector4d lastQ = quat_buff.segment<4>(lastQind);
+		if ((lastQ-(-1*q)).norm() < (lastQ-q).norm()) // deal with equivalent quaternions
 		{
 		    q *= -1;
 		}

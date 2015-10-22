@@ -39,7 +39,7 @@
   </node>
   
   <!-- Camera velocity from mocap filter node (backwards difference of pose) -->
-  <node pkg="turtlebot_ekf" type="filter_node" name="vel_filter" ns="image" output="screen" />
+  <node pkg="switch_vis_exp" type="filter_node" name="vel_filter" ns="image" output="screen" />
   
   <!-- Move turtlebot in circle -->
   <!-- <node if="$(arg drive)" name="set_pid" pkg="rostopic" type="rostopic" args="pub ugv0/mobile_base/commands/controller_info kobukisgs/ControllerInfo '{type: 1,p_gain: 300,i_gain: 0.1,d_gain: 2}'" /> -->
