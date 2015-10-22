@@ -9,7 +9,7 @@
 #include <switch_vis_exp/Output.h>
 #include <aruco_ros/Center.h>
 
-#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/imgproc.hpp>
 #include <Eigen/Dense>
 #include <iostream>
 #include <stdio.h>
@@ -39,7 +39,6 @@ class SubscribeAndPublish
     cv::Mat distCoeffs;
     bool gotCamParam;
     bool usePredictor;
-    bool switching;
     bool deadReckoning;
     bool artificialSwitching;
     double visibilityTimeout;
@@ -70,7 +69,6 @@ public:
         // Get Parameters
         ros::NodeHandle nhp("~");
         nhp.param<bool>("usePredictor", usePredictor, true);
-        nhp.param<bool>("switching", switching, false);
         nhp.param<bool>("deadReckoning", deadReckoning, false);
         nhp.param<bool>("artificialSwitching", artificialSwitching, false);
         nhp.param<double>("visibilityTimeout", visibilityTimeout, 0.2);

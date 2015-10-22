@@ -121,15 +121,20 @@ include_directories(
 
 ## Declare a cpp executable
 add_executable(filter src/filter.cpp)
+add_executable(filter_node src/filter_node.cpp)
 add_executable(exp_node src/exp_node.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
-add_dependencies(filter switch_vis_exp_generate_messages_cpp)
-add_dependencies(exp_node exp_generate_messages_cpp)
+add_dependencies(filter ${catkin_EXPORTED_TARGETS})
+add_dependencies(filter_node ${catkin_EXPORTED_TARGETS})
+add_dependencies(exp_node ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(filter
+  ${catkin_LIBRARIES}
+)
+target_link_libraries(filter_node
   ${catkin_LIBRARIES}
 )
 target_link_libraries(exp_node

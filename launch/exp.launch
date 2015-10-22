@@ -6,7 +6,6 @@
   <arg name="drawMarkers" default="true" /> <!-- show marker track from aruco -->
   <arg name="showViz" default="true" /> <!-- Launch rviz -->
   <arg name="predictor" default="true" /> <!-- use predictor instead of zero order hold in estimation algorithm -->
-  <arg name="switching" default="true" /> <!-- use predictor or zero order hold when target not visible -->
   <arg name="deadReckoning" default="true" /> <!-- use turtlebot onboard odometry for rotation estimation -->
   <arg name="artificial" default="false" /> <!-- artificial switching (i.e. fake loss of visibility) -->
   <arg name="visibilityTimeout" default="0.2" /> <!-- time to wait before instantiating predictor or zero order hold -->
@@ -15,7 +14,10 @@
   <include file="$(find mocap_optitrack)/launch/mocap.launch" />
   
   <!-- Launch camera driver -->
-  <include file="$(find ueye_cam)/launch/rgb8.launch" />
+  <!-- <include file="$(find ueye_cam)/launch/rgb8.launch" /> -->
+  <include file="$(find bluefox2)/launch/single_node.launch" >
+    <arg name="camera_name" value="camera"/>
+  </include>
   
   <!-- Launch tag tracker -->
   <include file="$(find aruco_ros)/launch/aruco.launch" >
@@ -25,7 +27,7 @@
   </include>
   
   <!-- Launch camera to image frame tf publisher. Transform between mocap rigid body of camera and actual image coordinate system -->
-  <node pkg="tf" type="static_transform_publisher" name="static_tf_pub" args="-0.008350929953087 0.068964651880922 -0.04580451039959 -0.736136511118121 -0.036230316529166 0.040159402103289 0.674658898487017 camera image 10" />
+  <node pkg="tf" type="static_transform_publisher" name="static_tf_pub" args="-0.051554475059647 -0.013983336212455 -0.099428117469005 -0.539266711588534 -0.710239547190435  0.360316903907372 0.273715159553861 camera image 10" />
   
   <!-- Launch world to image pose publisher (i.e. publish pose messages for the corresponding tf) -->
   <node pkg="robot_pose_publisher" type="robot_pose_publisher" name="robot_pose_publisher" output="screen" >
@@ -47,7 +49,6 @@
   <node name="exp" pkg="switch_vis_exp" type="exp_node" output="screen" >
     <param name="camera" value="$(arg cameraName)" />
     <param name="usePredictor" value="$(arg predictor)" />
-    <param name="switching" value="$(arg switching)" />
     <param name="deadReckoning" value="$(arg deadReckoning)" />
     <param name="artificialSwitching" value="$(arg artificial)" />
     <param name="visibilityTimeout" value="$(arg visibilityTimeout)" />
@@ -65,6 +66,6 @@
   <!-- <node if="$(arg showViz)" name="rqt_plot" pkg="rqt_plot" type="rqt_plot" /> -->
   
   <!-- Record data -->
-  <node if="$(arg recordData)" name="record" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/exp_Pred_movCam_D.bag /output /markerImage /$(arg cameraName)/camera_info /markerCenters /ugv0/pose /ugv0/odom /image/pose /image/body_vel" />
+  <node if="$(arg recordData)" name="record" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/no_predictor/exp_NoPred_random.bag /output /markerImage /$(arg cameraName)/camera_info /markerCenters /ugv0/pose /ugv0/odom /image/pose /image/body_vel" />
   
 </launch>
