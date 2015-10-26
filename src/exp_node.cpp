@@ -90,8 +90,9 @@ public:
         initTime = lastImageTime;
         
         // Get camera parameters
+        cout << cameraName+"/camera_info" << endl;
         camInfoSub = nh.subscribe(cameraName+"/camera_info",1,&SubscribeAndPublish::camInfoCB,this);
-        ROS_DEBUG("Waiting for camera parameters...");
+        ROS_DEBUG("Waiting for camera parameters on topic ...");
         do {
             ros::spinOnce();
             ros::Duration(0.1).sleep();
