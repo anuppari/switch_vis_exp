@@ -9,7 +9,7 @@
 #include <switch_vis_exp/Output.h>
 #include <aruco_ros/Center.h>
 
-#include <opencv2/imgproc.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <Eigen/Dense>
 #include <iostream>
 #include <stdio.h>
@@ -52,7 +52,6 @@ class SubscribeAndPublish
     double delToff;
     
     //states
-    double alpha;
     Vector3d yhat;
     Vector3d ylast;
     double lastImageTime;
@@ -60,7 +59,6 @@ class SubscribeAndPublish
     bool estimatorOn;
     Quaterniond qWorld2Odom; // Rotation for initializing dead reckoning
     Vector3d vTt;   // target linear velocity w.r.t. ground, expressed in target coordinate system
-    Vector3d wGTt;  // target angular velocity w.r.t. ground, expressed in target coordinate system
     Vector3d vCc;   // camera linear velocity w.r.t. ground, expressed in camera coordinate system
     Vector3d wGCc;  // camera angular velocity w.r.t. ground, expressed in camera coordinate system
 public:
@@ -171,15 +169,12 @@ public:
     void targetVelCBmocap(const geometry_msgs::TwistStampedConstPtr& twist)
     {
         vTt << twist->twist.linear.x,twist->twist.linear.y,twist->twist.linear.z;
-        wGTt << twist->twist.angular.x,twist->twist.angular.y,twist->twist.angular.z;
     }
     
     // Gets target velocities from turtlebot odometry
     void targetVelCBdeadReckoning(const nav_msgs::OdometryConstPtr& odom)
     {
-        
         vTt << odom->twist.twist.linear.x,odom->twist.twist.linear.y,odom->twist.twist.linear.z;
-        wGTt << odom->twist.twist.angular.x,odom->twist.twist.angular.y,odom->twist.twist.angular.z;
     }
     
     // Gets camera velocities. Also, if target not visible (i.e. estimatorOn = false) publishes output (ground truth)
@@ -238,7 +233,6 @@ public:
                 
                 // Target velocities expressed in camera coordinates
                 Vector3d vTc = quat*vTt;
-                Vector3d wGTc = quat*wGTt;
                 
                 // Update so that delT in featureCB is reasonable after switch
                 lastImageTime = timeNow;
@@ -364,7 +358,6 @@ public:
         
         // Target velocities expressed in camera coordinates
         Vector3d vTc = quat*vTt;
-        Vector3d wGTc = quat*wGTt;
         
         // Observer velocities
         Vector3d b = vTc - vCc;
@@ -450,7 +443,7 @@ public:
 
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "blob_node");
+    ros::init(argc, argv, "switch_vis_exp_node");
     
     SubscribeAndPublish sap;
     
