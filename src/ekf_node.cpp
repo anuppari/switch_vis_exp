@@ -9,7 +9,7 @@
 #include <switch_vis_exp/Output.h>
 #include <aruco_ros/Center.h>
 
-#include <opencv2/imgproc.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <Eigen/Dense> // Defines MatrixXd, Matrix3d, Vector3d, Quaterniond
 #include <iostream>
 #include <stdio.h>
@@ -49,6 +49,7 @@ class EKF
     //states
     Vector3d xhat;
     Vector3d xlast;
+    Matrix3d P;         // Estimated covariance
     double lastImageTime;
     double lastVelTime;
     bool estimatorOn;
@@ -57,7 +58,7 @@ class EKF
     Vector3d vCc;   // camera linear velocity w.r.t. ground, expressed in camera coordinate system
     Vector3d wGCc;  // camera angular velocity w.r.t. ground, expressed in camera coordinate system
     Matrix3d Q;     // EKF process noise covariance
-    Matrix3d R;     // EKF measurement noise covariance
+    Matrix2d R;     // EKF measurement noise covariance
     Matrix<double,2,3> H;   // EKF measurement model
 public:
     EKF()
@@ -84,7 +85,7 @@ public:
         
         // Initialize EKF matrices
         Q = q*Matrix3d::Identity();
-        R = r*Matrix3d::Identity();
+        R = r*Matrix2d::Identity();
         H << 1,0,0,
              0,1,0;
         
@@ -123,7 +124,7 @@ public:
         {
             // Initialize watchdog timer for feature visibility check
             watchdogTimer = nh.createTimer(ros::Duration(visibilityTimeout),&EKF::timeout,this,true);
-            watchdogTimer.stop() // Dont start watchdog until feature first visible
+            watchdogTimer.stop(); // Dont start watchdog until feature first visible
         }
     }
     
@@ -251,12 +252,12 @@ public:
                 double xi1 = (vc3*x1hat - vc1)*x3hat;
                 double xi2 = (vc3*x2hat - vc2)*x3hat;
                 
-                double y1hatDot = Omega1 + xi1 + vq1*x3hat - y1hat*vq3*x3hat;
-                double y2hatDot = Omega2 + xi2 + vq2*x3hat - y2hat*vq3*x3hat;
-                double y3hatDot = vc3*pow(x3hat,2) - (w2*x1hat - w1*x2hat)*x3hat - vq3*pow(x3hat,2);
+                double x1hatDot = Omega1 + xi1 + vq1*x3hat - x1hat*vq3*x3hat;
+                double x2hatDot = Omega2 + xi2 + vq2*x3hat - x2hat*vq3*x3hat;
+                double x3hatDot = vc3*pow(x3hat,2) - (w2*x1hat - w1*x2hat)*x3hat - vq3*pow(x3hat,2);
                 
                 // Predict Covariance
-                Matrix3d F = calculate_F(x,VCc,VTc,wGCc);
+                Matrix3d F = calculate_F(x,vCc,vTc,wGCc);
                 MatrixXd Pdot = F*P+P*F.transpose() + Q;
                 
                 // Update states and covariance
@@ -367,7 +368,7 @@ public:
         Vector3d w = -wGCc; //Vector3d::Zero();
         
         // EKF update
-        Matrix3d K = P*H.transpose()*(H*P*H.transpose()+R).inverse();
+        Matrix<double,3,2> K = P*H.transpose()*(H*P*H.transpose()+R).inverse();
         xhat += K*(x.head<2>()-xhat.head<2>());
         P = (Matrix3d::Identity()-K*H)*P;
         
