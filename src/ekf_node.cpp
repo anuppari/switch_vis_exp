@@ -257,7 +257,7 @@ public:
                 double x3hatDot = vc3*pow(x3hat,2) - (w2*x1hat - w1*x2hat)*x3hat - vq3*pow(x3hat,2);
                 
                 // Predict Covariance
-                Matrix3d F = calculate_F(x,vCc,vTc,wGCc);
+                Matrix3d F = calculate_F(xhat,vCc,vTc,wGCc);
                 MatrixXd Pdot = F*P+P*F.transpose() + Q;
                 
                 // Update states and covariance
@@ -276,10 +276,17 @@ public:
     }
     
     // Calculate linearization of dynamics (F) for EKF
-    Matrix3d calculate_F(Vector3d x_,Vector3d VCc_,Vector3d VTc_,Vector3d wGCc_)
+    Matrix3d calculate_F(Vector3d xhat_,Vector3d vCc_,Vector3d vTc_,Vector3d wGCc_)
     {
-        Matrix3d F;
+        double vc1 = vCc_(0);        double vc2 = vCc_(1);        double vc3 = vCc_(2);
+        double vq1 = vTc_(0);        double vq2 = vTc_(1);        double vq3 = vTc_(2);
+        double w1 = wGCc_(0);        double w2 = wGCc_(1);        double w3 = wGCc_(2);
+        double x1hat = xhat_(0);     double x2hat = xhat_(1);     double x3hat = xhat_(2);
         
+        Matrix3d F;
+        F << -2*w2*x1+w1*x2+(vc3-vq3)*x3,   w3+w1*x1,                       vq1-vc1-(vq3-vc3)*x1,
+             -w3-w2*x2,                     -w2*x1+2*w1*x2+(vc3-vq3)*x3,    vq2-vc2-(vq3-vc3)*x2,
+             -w2*x3,                        w1*x3,                          2*(vc3-vq3)*x3-(w2*x1-w1*x2);
         return F;
     }
     
