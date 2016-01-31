@@ -124,6 +124,7 @@ add_executable(filter src/filter.cpp)
 add_executable(filter_node src/filter_node.cpp)
 add_executable(exp_node src/exp_node.cpp)
 add_executable(ekf_node src/ekf_node.cpp)
+add_executable(sim_node src/sim_node.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
@@ -131,6 +132,7 @@ add_dependencies(filter ${catkin_EXPORTED_TARGETS})
 add_dependencies(filter_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(exp_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(ekf_node ${catkin_EXPORTED_TARGETS})
+add_dependencies(sim_node ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(filter
@@ -144,6 +146,10 @@ target_link_libraries(exp_node
   ${OpenCV_LIBRARIES}
 )
 target_link_libraries(ekf_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
+target_link_libraries(sim_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )
