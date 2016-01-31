@@ -281,7 +281,7 @@ public:
         double vc1 = vCc_(0);        double vc2 = vCc_(1);        double vc3 = vCc_(2);
         double vq1 = vTc_(0);        double vq2 = vTc_(1);        double vq3 = vTc_(2);
         double w1 = wGCc_(0);        double w2 = wGCc_(1);        double w3 = wGCc_(2);
-        double x1hat = xhat_(0);     double x2hat = xhat_(1);     double x3hat = xhat_(2);
+        double x1 = xhat_(0);        double x2 = xhat_(1);        double x3 = xhat_(2);
         
         Matrix3d F;
         F << -2*w2*x1+w1*x2+(vc3-vq3)*x3,   w3+w1*x1,                       vq1-vc1-(vq3-vc3)*x1,
