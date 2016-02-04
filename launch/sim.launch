@@ -9,11 +9,14 @@
   <arg name="opticFlow" value="true" />
   
   <!-- Simulate measurements -->
-  <node name="sim" pkg="switch_vis_exp" type="sim.py" output="screen" >
+  <node name="sim" pkg="switch_vis_exp" type="sim_node" output="screen" >
     <param name="camera" value="$(arg cameraName)" />
   </node>
   
-  <!-- Estimator -->
+  <!-- Control camera and target with xbox controller -->
+  <node name="joy" pkg="joy" type="joy_node" output="screen" />
+    
+  <!-- Estimator
   <node name="exp" pkg="switch_vis_exp" type="exp_node" output="screen" >
     <param name="camera" value="$(arg cameraName)" />
     <param name="usePredictor" value="$(arg usePredictor)" />
@@ -23,6 +26,7 @@
     <param name="k2" value="20.0" />
     <param name="k3" value="4.0" />
   </node>
+   -->
   
   <!-- Launch Vizualization -->
   <node if="$(arg showViz)" name="rviz" pkg="rviz" type="rviz" />

@@ -70,14 +70,15 @@ public:
         nhp.param<double>("visibilityTimeout", visibilityTimeout, 0.2);
         nhp.param<string>("cameraName",cameraName,"camera");
         nhp.param<string>("markerID",markerID,"100");
-        nhp.param<double>("q",q,4.0); // process noise
-        nhp.param<double>("r",r,4.0); // measurement noise
+        nhp.param<double>("q",q,10); // process noise
+        nhp.param<double>("r",r,0.001); // measurement noise
         nhp.param<double>("delTon",delTon,4.0);
         nhp.param<double>("delToff",delToff,1.0);
         
         // Initialize states
         xhat << 0,0,0.1;
         xlast << 0,0,0.1;
+        P = Eigen::Matrix3d::Identity();
         lastImageTime = ros::Time::now().toSec();
         lastVelTime = lastImageTime;
         estimatorOn = true;
@@ -194,7 +195,7 @@ public:
         vCc << twist->twist.linear.x,twist->twist.linear.y,twist->twist.linear.z;
         wGCc << twist->twist.angular.x,twist->twist.angular.y,twist->twist.angular.z;
         
-        if (!estimatorOn)
+        if (true)
         {
             // Object trans w.r.t. image frame, for ground truth
             Vector3d trans;
@@ -379,6 +380,9 @@ public:
         xhat += K*(x.head<2>()-xhat.head<2>());
         P = (Matrix3d::Identity()-K*H)*P;
         
+        std::cout << "output error: " << x.head<2>()-xhat.head<2>() << std::endl;
+        std::cout << "update gain: " << K << std::endl;
+        
         // Publish output
         publishOutput(x,xhat,trans,timeStamp);
         
@@ -421,7 +425,6 @@ public:
         pntMsg.point.z = XYZhat(2);
         pointPub.publish(pntMsg);
     }
-
 
 };//End of class EKF
 

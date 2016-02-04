@@ -20,6 +20,7 @@ class Sim
 {
     ros::NodeHandle nh;
     ros::Publisher targetVelPub;
+    ros::Publisher targetOdomPub;
     ros::Publisher camVelPub;
     ros::Publisher featurePub;
     ros::Publisher camInfoPub;
@@ -36,31 +37,38 @@ class Sim
     cv::Mat distCoeffs;
     double radius;
     double period;
+    std::string cameraName;
+    std::string targetName;
     
     // States
     Eigen::Vector3d camPos;
     Eigen::Quaterniond camOrient;
     Eigen::Vector3d targetPos;
     Eigen::Quaterniond targetOrient;
-    Eigen::Vector3d camLinVel;
-    Eigen::Vector3d camAngVel;
-    Eigen::Vector3d targetLinVel;
-    Eigen::Vector3d targetAngVel;
+    Eigen::Vector3d camLinVel; // expressed in body coordinate system
+    Eigen::Vector3d camAngVel; // expressed in body coordinate system
+    Eigen::Vector3d targetLinVel; // expressed in body coordinate system
+    Eigen::Vector3d targetAngVel; // expressed in body coordinate system
     
 public:
     Sim()
     {
-        std::string cameraName = "camera";
+        // Get Parameters
+        ros::NodeHandle nhp("~");
+        
+        nhp.param<std::string>("cameraName",cameraName,"camera");
+        nhp.param<std::string>("targetName",targetName,"ugv0");
         
         // Publishers
         camVelPub = nh.advertise<geometry_msgs::TwistStamped>("image/body_vel",10);
-        targetVelPub = nh.advertise<nav_msgs::Odometry>("ugv0/odom",10);
+        targetVelPub = nh.advertise<geometry_msgs::TwistStamped>(targetName+"/body_vel",10);
+        targetOdomPub = nh.advertise<nav_msgs::Odometry>(targetName+"/odom",10);
         featurePub = nh.advertise<aruco_ros::Center>("markerCenters",10);
         camInfoPub = nh.advertise<sensor_msgs::CameraInfo>(cameraName+"/camera_info",10,true); // latched
         joySub = nh.subscribe<sensor_msgs::Joy>("/joy",1,&Sim::joyCB,this);
         
         // Initialize states
-        camPos = Eigen::Vector3d::Zero();
+        camPos << 0,0,-10; //Eigen::Vector3d::Zero();
         camOrient = Eigen::Quaterniond::Identity();
         targetPos = Eigen::Vector3d::Zero();
         targetOrient = Eigen::Quaterniond::Identity();
@@ -79,11 +87,12 @@ public:
         sensor_msgs::CameraInfo camInfoMsg;
         double K[] = {1,0,0,0,1,0,0,0,1};
         double D[] = {0,0,0,0,0};
+        std::vector<double> Dvec(D,D + sizeof(D)/sizeof(D[0]));
         for (int i = 0; i < 9; i++)
         {
             camInfoMsg.K[i] = K[i];
-            if (i<5) camInfoMsg.D[i] = D[i];
         }
+        camInfoMsg.D = Dvec;
         image_geometry::PinholeCameraModel cam_model;
         cam_model.fromCameraInfo(camInfoMsg);
         camMat = cv::Mat(cam_model.fullIntrinsicMatrix());
@@ -92,24 +101,24 @@ public:
         camInfoPub.publish(camInfoMsg); // latched
         
         // Integrator
-        integrateTimer = nh.createTimer(ros::Duration(intTime),&Sim::integrateCB,this,true);
+        integrateTimer = nh.createTimer(ros::Duration(intTime),&Sim::integrateCB,this,false);
         
         // Other publishers
-        velPubTimer = nh.createTimer(ros::Duration(1.0/300.0),&Sim::velPubCB,this,true);
-        imagePubTimer = nh.createTimer(ros::Duration(1.0/30.0),&Sim::imagePubCB,this,true);
+        velPubTimer = nh.createTimer(ros::Duration(1.0/300.0),&Sim::velPubCB,this,false);
+        imagePubTimer = nh.createTimer(ros::Duration(1.0/30.0),&Sim::imagePubCB,this,false);
     }
     
     void integrateCB(const ros::TimerEvent& event)
     {
         // Integrate camera pose
-        camPos += camLinVel*intTime;
+        camPos += camOrient*camLinVel*intTime; // convert from body to world and integrate
         Eigen::Vector4d camOrientTemp(camOrient.w(),camOrient.x(),camOrient.y(),camOrient.z());
         camOrientTemp += 0.5*diffMat(camOrient)*camAngVel*intTime;
         camOrient = Eigen::Quaterniond(camOrientTemp(0),camOrientTemp(1),camOrientTemp(2),camOrientTemp(3));
         camOrient.normalize();
         
         // Integrate target pose
-        targetPos += targetLinVel*intTime;
+        targetPos += targetOrient*targetLinVel*intTime; // convert from body to world and integrate
         Eigen::Vector4d targetOrientTemp(targetOrient.w(),targetOrient.x(),targetOrient.y(),targetOrient.z());
         targetOrientTemp += 0.5*diffMat(targetOrient)*targetAngVel*intTime;
         targetOrient = Eigen::Quaterniond(targetOrientTemp(0),targetOrientTemp(1),targetOrientTemp(2),targetOrientTemp(3));
@@ -119,35 +128,45 @@ public:
         tf::Transform camTransform;
         camTransform.setOrigin(tf::Vector3(camPos(0),camPos(1),camPos(2)));
         camTransform.setRotation(tf::Quaternion(camOrient.x(),camOrient.y(),camOrient.z(),camOrient.w()));
-        tfbr.sendTransform(tf::StampedTransform(camTransform,ros::Time::now(),"world","camera"));
+        tfbr.sendTransform(tf::StampedTransform(camTransform,ros::Time::now(),"world","image"));
         
         // Publish target tf
         tf::Transform targetTransform;
         targetTransform.setOrigin(tf::Vector3(targetPos(0),targetPos(1),targetPos(2)));
         targetTransform.setRotation(tf::Quaternion(targetOrient.x(),targetOrient.y(),targetOrient.z(),targetOrient.w()));
-        tfbr.sendTransform(tf::StampedTransform(targetTransform,ros::Time::now(),"world","ugv0"));
+        tfbr.sendTransform(tf::StampedTransform(targetTransform,ros::Time::now(),"world",targetName));
+        tfbr.sendTransform(tf::StampedTransform(targetTransform,ros::Time::now(),targetName+"/odom",targetName+"/base_footprint"));
     }
     
     void velPubCB(const ros::TimerEvent& event)
     {
-        geometry_msgs::TwistStamped msg;
-        msg.header.stamp = ros::Time::now();
+        geometry_msgs::TwistStamped twistMsg;
+        twistMsg.header.stamp = ros::Time::now();
         
-        msg.twist.linear.x = camLinVel(0);
-        msg.twist.linear.y = camLinVel(1);
-        msg.twist.linear.z = camLinVel(2);
-        msg.twist.angular.x = camAngVel(0);
-        msg.twist.angular.y = camAngVel(0);
-        msg.twist.angular.z = camAngVel(0);
-        camVelPub.publish(msg);
+        // Publish camera velocities
+        twistMsg.twist.linear.x = camLinVel(0);
+        twistMsg.twist.linear.y = camLinVel(1);
+        twistMsg.twist.linear.z = camLinVel(2);
+        twistMsg.twist.angular.x = camAngVel(0);
+        twistMsg.twist.angular.y = camAngVel(0);
+        twistMsg.twist.angular.z = camAngVel(0);
+        camVelPub.publish(twistMsg);
         
-        msg.twist.linear.x = targetLinVel(0);
-        msg.twist.linear.y = targetLinVel(1);
-        msg.twist.linear.z = targetLinVel(2);
-        msg.twist.angular.x = targetAngVel(0);
-        msg.twist.angular.y = targetAngVel(0);
-        msg.twist.angular.z = targetAngVel(0);
-        targetVelPub.publish(msg);
+        // Publish target velocities
+        twistMsg.twist.linear.x = targetLinVel(0);
+        twistMsg.twist.linear.y = targetLinVel(1);
+        twistMsg.twist.linear.z = targetLinVel(2);
+        twistMsg.twist.angular.x = targetAngVel(0);
+        twistMsg.twist.angular.y = targetAngVel(0);
+        twistMsg.twist.angular.z = targetAngVel(0);
+        targetVelPub.publish(twistMsg);
+        
+        // Publish target Odometry
+        nav_msgs::Odometry odomMsg;
+        odomMsg.header.stamp = ros::Time::now();
+        odomMsg.header.frame_id = targetName+"/odom";
+        odomMsg.child_frame_id = targetName+"/base_footprint";
+        odomMsg.twist.twist = twistMsg.twist;
     }
     
     void imagePubCB(const ros::TimerEvent& event)
@@ -157,11 +176,11 @@ public:
         
         // Convert to OpenCV
         cv::Mat t2cPosCV;
-        cv::eigen2cv(t2cPos,t2cPosCV);
+        cv::eigen2cv((Eigen::MatrixXd) t2cPos.transpose(),t2cPosCV);
         
         // Project points to determine pixel coordinates
         cv::Mat imagePoint;
-        cv::projectPoints(t2cPosCV,cv::Mat::zeros(1,3,CV_8UC1),cv::Mat::zeros(1,3,CV_8UC1),camMat,distCoeffs,imagePoint);
+        cv::projectPoints(t2cPosCV,cv::Mat::zeros(1,3,CV_32F),cv::Mat::zeros(1,3,CV_32F),camMat,distCoeffs,imagePoint);
         
         // Publish image point
         aruco_ros::Center msg;
@@ -178,8 +197,8 @@ public:
     {
         if (joyMsg->buttons[2]) // x - drive in circle
         {
-            radius += 0.1*joyMsg->axes[6];
-            period -= 10*joyMsg->axes[7];
+            radius += 0.1*(joyMsg->buttons[12]-joyMsg->buttons[11]);
+            period -= 10*(joyMsg->buttons[13]-joyMsg->buttons[14]);
             targetAngVel << 0, 0, 2*M_PI/period;
             targetLinVel << 2*M_PI*radius/period, 0, 0;
         }
@@ -190,8 +209,8 @@ public:
         }
         else
         {
-            Eigen::Vector3d linVel(joyMsg->axes[0], joyMsg->axes[1], 0);
-            Eigen::Vector3d angVel(joyMsg->axes[4], joyMsg->axes[3], joyMsg->axes[5]-joyMsg->axes[2]);
+            Eigen::Vector3d linVel(-1*joyMsg->axes[0], -1*joyMsg->axes[1], 0);
+            Eigen::Vector3d angVel(-1*joyMsg->axes[4], joyMsg->axes[3], joyMsg->axes[2]-joyMsg->axes[5]);
             if (joyMsg->buttons[5]) // Right bumper, control camera
             {
                 camLinVel = linVel;
