@@ -1,0 +1,45 @@
+<launch>
+  <!-- Launch Parameters -->
+  <arg name="cameraName" value="camera" />
+  <arg name="recordData" value="false" />
+  <arg name="showViz" value="false" />
+  <arg name="deadReckoning" value="false" />
+  <arg name="normalizedKinematics" value="false" />
+  <arg name="artificialSwitching" value="true" />
+  
+  <!-- Simulate measurements -->
+  <node name="sim" pkg="switch_vis_exp" type="sim_node" output="screen" >
+    <param name="camera" value="$(arg cameraName)" />
+  </node>
+  
+  <!-- Control camera and target with xbox controller -->
+  <node name="joy" pkg="joy" type="joy_node" output="screen" >
+    <param name="deadzone" value="0.15" />
+  </node>
+    
+  <!-- Estimator -->
+  <node name="exp" pkg="switch_vis_exp" type="ekf_node" output="screen" >
+    <param name="camera" value="$(arg cameraName)" />
+    <param name="deadReckoning" value="$(arg deadReckoning)" />
+    <param name="normalizedKinematics" value="$(arg normalizedKinematics)" />
+    <param name="artificialSwitching" value="$(arg artificialSwitching)" />
+    <param name="visibilityTimeout" value="0.2" />
+    <param name="q" value="1.0" />
+    <param name="r" value="0.01" />
+    <param name="delTon" value="5.0" />
+    <param name="delToff" value="10.0" />
+    <param name="X0" value="3.0" />
+    <param name="Y0" value="3.0" />
+    <param name="Z0" value="1.0" />
+  </node>
+  
+  <!-- Launch Vizualization -->
+  <node if="$(arg showViz)" name="rviz" pkg="rviz" type="rviz" />
+  
+  <!-- Launch Plot -->
+  <!-- <node if="$(arg showViz)" name="plot" pkg="rqt_plot" type="rqt_plot" /> -->
+  
+  <!-- Record data -->
+  <node if="$(arg recordData)" name="record" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/exp_aug_switch.bag /output /debug /filter /markerImage /$(arg cameraName)/camera_info /markerCenters /markers /odom" />
+  
+</launch>

@@ -85,8 +85,8 @@ public:
         
         // Initialize and Publish camera info
         sensor_msgs::CameraInfo camInfoMsg;
-        double K[] = {1,0,0,0,1,0,0,0,1};
-        double D[] = {0,0,0,0,0};
+        double K[] = {1.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,1.0};
+        double D[] = {0.0,0.0,0.0,0.0,0.0};
         std::vector<double> Dvec(D,D + sizeof(D)/sizeof(D[0]));
         for (int i = 0; i < 9; i++)
         {
