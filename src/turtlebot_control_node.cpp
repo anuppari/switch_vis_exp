@@ -63,7 +63,7 @@ public:
 
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "velocity_map_node");
+    ros::init(argc, argv, "turtlebot_control_node");
     
     turtlebot_control tc;
     

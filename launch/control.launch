@@ -1,4 +1,8 @@
 <launch>
-    <!-- turtlebot controller -->
-    <node pkg="switch_vis_exp" type="turtlebot_control.py" name="turtlebot_control" output="screen" />
+	<group ns="ugv0">
+	    <!-- turtlebot controller -->
+	    <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control_node" output="screen" />
+	    
+	    <!-- velocity map, i.e. world flow field -->
+	    <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map_node" output="screen" />
 </launch>
