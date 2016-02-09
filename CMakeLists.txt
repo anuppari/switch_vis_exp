@@ -56,16 +56,14 @@ find_package(catkin REQUIRED COMPONENTS
 add_message_files(
   FILES
   Output.msg
-  Velocity.msg
   Debug.msg
 )
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+add_service_files(
+  FILES
+  MapVel.srv
+)
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -120,24 +118,23 @@ include_directories(
 # )
 
 ## Declare a cpp executable
-add_executable(filter src/filter.cpp)
 add_executable(filter_node src/filter_node.cpp)
 add_executable(exp_node src/exp_node.cpp)
 add_executable(ekf_node src/ekf_node.cpp)
 add_executable(sim_node src/sim_node.cpp)
+add_executable(velocity_map_node src/velocity_map_node.cpp)
+add_executable(turtlebot_control_node src/turtlebot_control_node.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
-add_dependencies(filter ${catkin_EXPORTED_TARGETS})
 add_dependencies(filter_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(exp_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(ekf_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(sim_node ${catkin_EXPORTED_TARGETS})
+add_dependencies(velocity_map_node ${catkin_EXPORTED_TARGETS})
+add_dependencies(turtlebot_control_node ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(filter
-  ${catkin_LIBRARIES}
-)
 target_link_libraries(filter_node
   ${catkin_LIBRARIES}
 )
@@ -152,6 +149,12 @@ target_link_libraries(ekf_node
 target_link_libraries(sim_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
+)
+target_link_libraries(velocity_map_node
+  ${catkin_LIBRARIES}
+)
+target_link_libraries(turtlebot_control_node
+  ${catkin_LIBRARIES}
 )
 
 #############
