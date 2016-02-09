@@ -17,9 +17,9 @@ public:
     velocity_map()
     {
         // Get parameters
-        nh.param<double>("a",a,2);
-        nh.param<double>("b",b,2);
-        nh.param<double>("k1",k1,1);
+        nh.param<double>("a",a,1);
+        nh.param<double>("b",b,1);
+        nh.param<double>("k1",k1,0.5);
         nh.param<double>("k2",k2,0.5);
         nh.param<int>("n",n,4);
         
@@ -53,7 +53,7 @@ public:
         resp.twist.linear.x = u;
         resp.twist.linear.y = v;
         
-        return 0;
+        return true;
     }
 
     int sgn(double val)

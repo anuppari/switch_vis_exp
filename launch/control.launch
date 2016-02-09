@@ -5,4 +5,5 @@
 	    
 	    <!-- velocity map, i.e. world flow field -->
 	    <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map_node" output="screen" />
+    </group>
 </launch>

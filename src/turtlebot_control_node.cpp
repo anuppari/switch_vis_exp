@@ -27,6 +27,7 @@ public:
         
         // get service handle
         client = nh.serviceClient<switch_vis_exp::MapVel>("get_velocity");
+        std::cout << client.getService() << std::endl;
         
         // subscribers
         poseSub = nh.subscribe("pose",10,&turtlebot_control::poseCB,this);
@@ -39,22 +40,22 @@ public:
         if (client.call(srv))
         {
             // get velocity
-            Eigen::Vector3d vel;
-            vel << srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z;
+            Eigen::Vector3d des_vel;
+            des_vel << srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z;
             
             // get orientation of turtlebot
-            Eigen::Quaterniond quat(pose->pose.orientation.x, pose->pose.orientation.y, pose->pose.orientation.z, pose->pose.orientation.w);
+            Eigen::Quaterniond quat(pose->pose.orientation.w, pose->pose.orientation.x, pose->pose.orientation.y, pose->pose.orientation.z);
             
             // rotate velocity into turtlebot body frame
-            Eigen::Vector3d body_vel = quat.inverse()*vel;
+            Eigen::Vector3d des_body_vel = quat.inverse()*des_vel;
             
             // non-holonomic controller
             Eigen::Vector3d xDir(1,0,0);
-            Eigen::Vector3d w = kw*xDir.cross(body_vel); // angular velocity command
+            Eigen::Vector3d w = kw*xDir.cross(des_body_vel/des_body_vel.norm()); // angular velocity command
             
             // publish to turtlebot
             geometry_msgs::Twist twistMsg;
-            twistMsg.linear.x = body_vel[0];
+            twistMsg.linear.x = des_body_vel[0];
             twistMsg.angular.z = w[2];
             velPub.publish(twistMsg);
         }
