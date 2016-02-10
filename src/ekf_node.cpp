@@ -84,12 +84,12 @@ public:
         // Initialize states
         if (normalizedKinematics)
         {
-			xhat << X0/Z0,Y0/Z0,1/Z0;
-		}
-		else
-		{
-			xhat << X0,Y0,Z0;
-		}
+            xhat << X0/Z0,Y0/Z0,1/Z0;
+        }
+        else
+        {
+            xhat << X0,Y0,Z0;
+        }
         P = Eigen::Matrix3d::Identity();
         lastVelTime = ros::Time::now().toSec();
         estimatorOn = true;
@@ -218,12 +218,12 @@ public:
             Vector3d x;
             if (normalizedKinematics)
             {
-				x << trans.segment<2>(0)/trans(2),1/trans(2);
-			}
-			else
-			{
-				x = trans;
-			}
+                x << trans.segment<2>(0)/trans(2),1/trans(2);
+            }
+            else
+            {
+                x = trans;
+            }
             
             // Object rotation w.r.t. image frame, for rotating target velocities into image coordinates
             try
@@ -263,21 +263,21 @@ public:
                 double x1hatDot, x2hatDot, x3hatDot;
                 if (normalizedKinematics)
                 {
-					double Omega1 = w3*x2hat - w2 - w2*pow(x1hat,2) + w1*x1hat*x2hat;
-					double Omega2 = w1 - w3*x1hat - w2*x1hat*x2hat + w1*pow(x2hat,2);
-					double xi1 = (vc3*x1hat - vc1)*x3hat;
-					double xi2 = (vc3*x2hat - vc2)*x3hat;
-					
-					x1hatDot = Omega1 + xi1 + vq1*x3hat - x1hat*vq3*x3hat;
-					x2hatDot = Omega2 + xi2 + vq2*x3hat - x2hat*vq3*x3hat;
-					x3hatDot = vc3*pow(x3hat,2) - (w2*x1hat - w1*x2hat)*x3hat - vq3*pow(x3hat,2);
-				}
-				else
-				{
-					x1hatDot = vq1 - vc1 + w3*x2hat - w2*x3hat;
-					x2hatDot = vq2 - vc2 + w1*x3hat - w3*x1hat;
-					x3hatDot = vq3 - vc3 + w2*x1hat - w1*x2hat;
-				}
+                    double Omega1 = w3*x2hat - w2 - w2*pow(x1hat,2) + w1*x1hat*x2hat;
+                    double Omega2 = w1 - w3*x1hat - w2*x1hat*x2hat + w1*pow(x2hat,2);
+                    double xi1 = (vc3*x1hat - vc1)*x3hat;
+                    double xi2 = (vc3*x2hat - vc2)*x3hat;
+                    
+                    x1hatDot = Omega1 + xi1 + vq1*x3hat - x1hat*vq3*x3hat;
+                    x2hatDot = Omega2 + xi2 + vq2*x3hat - x2hat*vq3*x3hat;
+                    x3hatDot = vc3*pow(x3hat,2) - (w2*x1hat - w1*x2hat)*x3hat - vq3*pow(x3hat,2);
+                }
+                else
+                {
+                    x1hatDot = vq1 - vc1 + w3*x2hat - w2*x3hat;
+                    x2hatDot = vq2 - vc2 + w1*x3hat - w3*x1hat;
+                    x3hatDot = vq3 - vc3 + w2*x1hat - w1*x2hat;
+                }
                 
                 // Predict Covariance
                 Matrix3d F = calculate_F(xhat,vCc,vTc,wGCc);
@@ -333,30 +333,30 @@ public:
         }
         else
         {
-			double X = xhat_(0);
-			double Y = xhat_(1);
-			double Z = xhat_(2);
-			
-			double fx = camMat.at<double>(0,0);
-			double fy = camMat.at<double>(1,1);
-			double cx = camMat.at<double>(0,2);
-			double cy = camMat.at<double>(1,2);
-			
-			H << fx/Z, 0, -1*fx*X/pow(Z,2),
-				 0, fy/Z, -1*fy*Y/pow(Z,2);
-			
-			/*
-			int numDistCoeffs = sizeof(distCoeffs) / sizeof(distCoeffs.at<double>(0));
-			double k1 = numDistCoeffs > 0 ? distCoeffs.at<double>(0) : 0;
-			double k2 = numDistCoeffs > 1 ? distCoeffs.at<double>(1) : 0;
-			double p1 = numDistCoeffs > 2 ? distCoeffs.at<double>(2) : 0;
-			double p2 = numDistCoeffs > 3 ? distCoeffs.at<double>(3) : 0;
-			double k3 = numDistCoeffs > 4 ? distCoeffs.at<double>(4) : 0;
-			double k4 = numDistCoeffs > 5 ? distCoeffs.at<double>(5) : 0;
-			double k5 = numDistCoeffs > 6 ? distCoeffs.at<double>(6) : 0;
-			double k6 = numDistCoeffs > 7 ? distCoeffs.at<double>(7) : 0;
-			
-			double dudx = fx*(((k1*std::pow((std::pow(X,2) + std::pow(Y,2)),2))/std::pow(Z,4) + (k2*std::pow((std::pow(X,2) + std::pow(Y,2)),4))/std::pow(Z,8) + (k3*std::pow((std::pow(X,2) + std::pow(Y,2)),6))/std::pow(Z,12) + 1)/(Z*((k4*(X^2 + Y^2)^2)/Z^4 + (k5*(X^2 + Y^2)^4)/Z^8 + (k6*(X^2 + Y^2)^6)/Z^12 + 1)) + (2*Y*p1)/Z^2 + (4*X*p2*(X^2 + Y^2 + Z^2))/Z^4 + (4*X^2*(X^2 + Y^2)*(3*k3*X^8 + 12*k3*X^6*Y^2 + 18*k3*X^4*Y^4 + 2*k2*X^4*Z^4 + 12*k3*X^2*Y^6 + 4*k2*X^2*Y^2*Z^4 + 3*k3*Y^8 + 2*k2*Y^4*Z^4 + k1*Z^8))/(Z^13*((k4*(X^2 + Y^2)^2)/Z^4 + (k5*(X^2 + Y^2)^4)/Z^8 + (k6*(X^2 + Y^2)^6)/Z^12 + 1)) - (4*X^2*(X^2 + Y^2)*((k1*(X^2 + Y^2)^2)/Z^4 + (k2*(X^2 + Y^2)^4)/Z^8 + (k3*(X^2 + Y^2)^6)/Z^12 + 1)*(3*k6*X^8 + 12*k6*X^6*Y^2 + 18*k6*X^4*Y^4 + 2*k5*X^4*Z^4 + 12*k6*X^2*Y^6 + 4*k5*X^2*Y^2*Z^4 + 3*k6*Y^8 + 2*k5*Y^4*Z^4 + k4*Z^8))/(Z^13*((k4*(X^2 + Y^2)^2)/Z^4 + (k5*(X^2 + Y^2)^4)/Z^8 + (k6*(X^2 + Y^2)^6)/Z^12 + 1)^2));
+            double X = xhat_(0);
+            double Y = xhat_(1);
+            double Z = xhat_(2);
+            
+            double fx = camMat.at<double>(0,0);
+            double fy = camMat.at<double>(1,1);
+            double cx = camMat.at<double>(0,2);
+            double cy = camMat.at<double>(1,2);
+            
+            H << fx/Z, 0, -1*fx*X/pow(Z,2),
+                 0, fy/Z, -1*fy*Y/pow(Z,2);
+            
+            /*
+            int numDistCoeffs = sizeof(distCoeffs) / sizeof(distCoeffs.at<double>(0));
+            double k1 = numDistCoeffs > 0 ? distCoeffs.at<double>(0) : 0;
+            double k2 = numDistCoeffs > 1 ? distCoeffs.at<double>(1) : 0;
+            double p1 = numDistCoeffs > 2 ? distCoeffs.at<double>(2) : 0;
+            double p2 = numDistCoeffs > 3 ? distCoeffs.at<double>(3) : 0;
+            double k3 = numDistCoeffs > 4 ? distCoeffs.at<double>(4) : 0;
+            double k4 = numDistCoeffs > 5 ? distCoeffs.at<double>(5) : 0;
+            double k5 = numDistCoeffs > 6 ? distCoeffs.at<double>(6) : 0;
+            double k6 = numDistCoeffs > 7 ? distCoeffs.at<double>(7) : 0;
+            
+            double dudx = fx*(((k1*std::pow((std::pow(X,2) + std::pow(Y,2)),2))/std::pow(Z,4) + (k2*std::pow((std::pow(X,2) + std::pow(Y,2)),4))/std::pow(Z,8) + (k3*std::pow((std::pow(X,2) + std::pow(Y,2)),6))/std::pow(Z,12) + 1)/(Z*((k4*(X^2 + Y^2)^2)/Z^4 + (k5*(X^2 + Y^2)^4)/Z^8 + (k6*(X^2 + Y^2)^6)/Z^12 + 1)) + (2*Y*p1)/Z^2 + (4*X*p2*(X^2 + Y^2 + Z^2))/Z^4 + (4*X^2*(X^2 + Y^2)*(3*k3*X^8 + 12*k3*X^6*Y^2 + 18*k3*X^4*Y^4 + 2*k2*X^4*Z^4 + 12*k3*X^2*Y^6 + 4*k2*X^2*Y^2*Z^4 + 3*k3*Y^8 + 2*k2*Y^4*Z^4 + k1*Z^8))/(Z^13*((k4*(X^2 + Y^2)^2)/Z^4 + (k5*(X^2 + Y^2)^4)/Z^8 + (k6*(X^2 + Y^2)^6)/Z^12 + 1)) - (4*X^2*(X^2 + Y^2)*((k1*(X^2 + Y^2)^2)/Z^4 + (k2*(X^2 + Y^2)^4)/Z^8 + (k3*(X^2 + Y^2)^6)/Z^12 + 1)*(3*k6*X^8 + 12*k6*X^6*Y^2 + 18*k6*X^4*Y^4 + 2*k5*X^4*Z^4 + 12*k6*X^2*Y^6 + 4*k5*X^2*Y^2*Z^4 + 3*k6*Y^8 + 2*k5*Y^4*Z^4 + k4*Z^8))/(Z^13*((k4*(X^2 + Y^2)^2)/Z^4 + (k5*(X^2 + Y^2)^4)/Z^8 + (k6*(X^2 + Y^2)^6)/Z^12 + 1)^2));
             H << 0, w3, -1*w2,
                 -w3, 0, w1;
             */
@@ -378,7 +378,7 @@ public:
         {
             if (!estimatorOn)
             {
-				cout << "Estimator off" << endl;
+                cout << "Estimator off" << endl;
                 return;
             }
             cout << "Estimator on" << endl;
@@ -404,12 +404,12 @@ public:
         Vector3d x;
         if (normalizedKinematics)
         {
-			x << trans(0)/trans(2), trans(1)/trans(2), 1/trans(2);
-		}
-		else
-		{
-			x = trans;
-		}
+            x << trans(0)/trans(2), trans(1)/trans(2), 1/trans(2);
+        }
+        else
+        {
+            x = trans;
+        }
         
         // Object pose w.r.t. image frame
         if (deadReckoning)
@@ -449,14 +449,14 @@ public:
         Vector2d y;
         if (normalizedKinematics)
         {
-			cv::undistortPoints(pts,undistPts,camMat,distCoeffs); // Returns normalized Euclidean coordinates
-			y << undistPts.at<double>(0,0),undistPts.at<double>(0,1);
+            cv::undistortPoints(pts,undistPts,camMat,distCoeffs); // Returns normalized Euclidean coordinates
+            y << undistPts.at<double>(0,0),undistPts.at<double>(0,1);
         }
         else
         {
-			cv::undistortPoints(pts,undistPts,camMat,distCoeffs,cv::noArray(),camMat); // Returns undistorted pixel coordinates
-			y << undistPts.at<double>(0,0),undistPts.at<double>(0,1);
-		}
+            cv::undistortPoints(pts,undistPts,camMat,distCoeffs,cv::noArray(),camMat); // Returns undistorted pixel coordinates
+            y << undistPts.at<double>(0,0),undistPts.at<double>(0,1);
+        }
         
         // Target velocities expressed in camera coordinates
         Vector3d vTc = quat*vTt;
@@ -489,24 +489,24 @@ public:
     // Calculate expected measurements
     Vector2d calculate_yhat(Vector3d xhat)
     {
-		Vector2d yhat;
-		
-		if (normalizedKinematics)
-		{
-			yhat = xhat.head<2>();
-		}
-		else
-		{
-			double fx = camMat.at<double>(0,0);
-			double fy = camMat.at<double>(1,1);
-			double cx = camMat.at<double>(0,2);
-			double cy = camMat.at<double>(1,2);
-			
-			yhat << fx*xhat(0)/xhat(2) + cx, fy*xhat(1)/xhat(2) + cy;
-		}
-		
-		return yhat;
-	}
+        Vector2d yhat;
+        
+        if (normalizedKinematics)
+        {
+            yhat = xhat.head<2>();
+        }
+        else
+        {
+            double fx = camMat.at<double>(0,0);
+            double fy = camMat.at<double>(1,1);
+            double cx = camMat.at<double>(0,2);
+            double cy = camMat.at<double>(1,2);
+            
+            yhat << fx*xhat(0)/xhat(2) + cx, fy*xhat(1)/xhat(2) + cy;
+        }
+        
+        return yhat;
+    }
     
     // Method for publishing data (estimate, ground truth, etc) and publishing Point message for visualization
     void publishOutput(Vector3d y, Vector3d yhat, ros::Time timeStamp)
@@ -518,18 +518,18 @@ public:
         Vector3d XYZerror;
         if (normalizedKinematics)
         {
-			XYZ << y(0)/y(2), y(1)/y(2), 1/y(2);
-			XYZhat << yhat(0)/yhat(2), yhat(1)/yhat(2), 1/yhat(2);
-			error = y - yhat;
-			XYZerror = XYZ - XYZhat;
-		}
+            XYZ << y(0)/y(2), y(1)/y(2), 1/y(2);
+            XYZhat << yhat(0)/yhat(2), yhat(1)/yhat(2), 1/yhat(2);
+            error = y - yhat;
+            XYZerror = XYZ - XYZhat;
+        }
         else
         {
-			XYZ = y;
-			XYZhat = yhat;
-			error << y(0)/y(2) - yhat(0)/yhat(2), y(1)/y(2) - yhat(1)/yhat(2), 1/y(2) - 1/yhat(2);
-			XYZerror = XYZ - XYZhat;
-		}
+            XYZ = y;
+            XYZhat = yhat;
+            error << y(0)/y(2) - yhat(0)/yhat(2), y(1)/y(2) - yhat(1)/yhat(2), 1/y(2) - 1/yhat(2);
+            XYZerror = XYZ - XYZhat;
+        }
         
         // Publish output
         switch_vis_exp::Output outMsg = switch_vis_exp::Output();
