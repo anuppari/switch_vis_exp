@@ -1,69 +1,10 @@
-<launch>
-  <!-- Launch Parameters -->
-  <arg name="drive" default="false" /> <!-- drive turtlebot in circles -->
-  <arg name="cameraName" default="camera" /> <!-- camera topic -->
-  <arg name="recordData" default="false" /> <!-- record to rosbag -->
-  <arg name="drawMarkers" default="true" /> <!-- show marker track from aruco -->
-  <arg name="showViz" default="true" /> <!-- Launch rviz -->
-  <arg name="predictor" default="true" /> <!-- use predictor instead of zero order hold in estimation algorithm -->
-  <arg name="deadReckoning" default="true" /> <!-- use turtlebot onboard odometry for rotation estimation -->
-  <arg name="artificial" default="false" /> <!-- artificial switching (i.e. fake loss of visibility) -->
-  <arg name="visibilityTimeout" default="0.1" /> <!-- time to wait before instantiating predictor or zero order hold -->
-  
-  <!-- Launch motion capture system listener -->
-  <include file="$(find mocap_optitrack)/launch/mocap.launch" />
-  
-  <!-- Launch camera driver -->
-  <include file="$(find ueye_cam)/launch/rgb8.launch" />
-  <!-- <include file="$(find bluefox2)/launch/single_node.launch" /> -->
+<launch>  
+  <!-- Setup -->
+  <include file="$(find switch_vis_exp)/launch/setup.launch" />
   
   <!-- Launch tag tracker -->
-  <include file="$(find aruco_ros)/launch/aruco.launch" >
-    <arg name="cameraName" value="$(arg cameraName)" />
-    <arg name="image_frame_id" value="image" />
-    <arg name="drawMarkers" value="$(arg drawMarkers)" />
-    <arg name="markerSize" value="0.2032" /> <!-- [meters] -->
+  <include file="$(find switch_vis_exp)/launch/estimators.launch" >
+    <arg name="exp" value="true" />
+    <arg name="ekf" value="false" />
   </include>
-  
-  <!-- Launch camera to image frame tf publisher. Transform between mocap rigid body of camera and actual image coordinate system -->
-  <node pkg="tf" type="static_transform_publisher" name="image_broadcaster" args="-0.0868978 0.0104688 -0.0126028 -0.57167 -0.434797 0.441465 0.537815 camera image 100" />
-  
-  <!-- Launch world to image pose publisher (i.e. publish pose messages for the corresponding tf) -->
-  <node pkg="robot_pose_publisher" type="robot_pose_publisher" name="robot_pose_publisher" output="screen" >
-      <param name="map_frame" value="world" />
-      <param name="base_frame" value="image" />
-      <param name="publish_frequency" value="360.0" />
-      <param name="is_stamped" value="true" />
-      <remap from="robot_pose" to="image/pose" />
-  </node>
-  
-  <!-- Camera velocity from mocap filter node (backwards difference of pose) -->
-  <node pkg="switch_vis_exp" type="filter_node" name="vel_filter" ns="image" output="screen" />
-  
-  <!-- Move turtlebot in circle -->
-  <node if="$(arg drive)" name="drive_circle" pkg="rostopic" type="rostopic" args="pub -r 10 /ugv0/cmd_vel_mux/input/navi/raw geometry_msgs/Twist '{linear:  {x: 0.5, y: 0.0, z: 0.0}, angular: {x: 0.0,y: 0.0,z: 0.7}}'" />
-
-  <!-- Estimator -->
-  <node name="exp" pkg="switch_vis_exp" type="exp_node" output="screen" >
-    <param name="cameraName" value="$(arg cameraName)" />
-    <param name="usePredictor" value="$(arg predictor)" />
-    <param name="deadReckoning" value="$(arg deadReckoning)" />
-    <param name="artificialSwitching" value="$(arg artificial)" />
-    <param name="visibilityTimeout" value="$(arg visibilityTimeout)" />
-    <param name="k1" value="2.0" /> <!-- Gains -->
-    <param name="k2" value="2.0" /> <!-- Gains -->
-    <param name="k3" value="1.0" /> <!-- Gains -->
-    <param name="delTon" value="4.0" /> <!-- contiguous visibility time if artificial switching -->
-    <param name="delToff" value="0.5" /> <!-- contiguous invisibility time if artificial switching -->
-  </node>
-  
-  <!-- Launch Vizualization -->
-  <node if="$(arg showViz)" name="rviz" pkg="rviz" type="rviz" />
-  
-  <!-- Launch Plot -->
-  <!-- <node if="$(arg showViz)" name="rqt_plot" pkg="rqt_plot" type="rqt_plot" /> -->
-  
-  <!-- Record data -->
-  <node if="$(arg recordData)" name="record" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/no_predictor/exp_NoPred_random.bag /output /markerImage /$(arg cameraName)/camera_info /markerCenters /ugv0/pose /ugv0/odom /image/pose /image/body_vel" />
-  
 </launch>

@@ -52,6 +52,10 @@ public:
         // response
         resp.twist.linear.x = u;
         resp.twist.linear.y = v;
+        resp.twist.linear.z = 0;
+        resp.twist.angular.x = 0;
+        resp.twist.angular.y = 0;
+        resp.twist.angular.z = 0;
         
         return true;
     }

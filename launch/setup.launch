@@ -38,8 +38,8 @@
   
   <!-- Move turtlebot along track, xbox controller can override if joy enabled in turtlebot launch file -->
   <group if="$(arg drive)" >
-      <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" ns="ugv0" output="screen" />
-      <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" output="screen" />
+      <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" />
+      <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" ns="ugv0" output="screen" />
   </group>
   
   <!-- Launch Vizualization -->

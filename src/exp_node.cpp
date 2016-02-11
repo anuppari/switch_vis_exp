@@ -29,6 +29,7 @@ class SubscribeAndPublish
     ros::Subscriber targetVelSub;
     ros::Subscriber camVelSub;
     ros::Subscriber featureSub;
+    ros::ServiceClient targetVelClient;
     tf::TransformListener tfl;
     ros::Timer watchdogTimer;
     ros::Timer switchingTimer;
@@ -43,6 +44,7 @@ class SubscribeAndPublish
     bool useVelocityMap;
     double visibilityTimeout;
     string cameraName;
+    string targetName;
     string markerID;
     double k1;
     double k2;
@@ -53,7 +55,7 @@ class SubscribeAndPublish
     
     //states
     Vector3d yhat;
-    Vector3d ylast;
+    Vector2d ylast;
     double lastImageTime;
     double lastVelTime;
     bool estimatorOn;
@@ -72,16 +74,22 @@ public:
         nhp.param<bool>("useVelocityMap", useVelocityMap, true);
         nhp.param<double>("visibilityTimeout", visibilityTimeout, 0.2);
         nhp.param<string>("cameraName",cameraName,"camera");
+        nhp.param<string>("targetName",targetName,"ugv0");
         nhp.param<string>("markerID",markerID,"100");
+        nhp.param<double>("delTon",delTon,4.0);
+        nhp.param<double>("delToff",delToff,1.0);
         nhp.param<double>("k1",k1,4.0);
         nhp.param<double>("k2",k2,4.0);
         nhp.param<double>("k3",k3,4.0);
-        nhp.param<double>("delTon",delTon,4.0);
-        nhp.param<double>("delToff",delToff,1.0);
         
         // Initialize states
-        yhat << 0,0,0.1;
-        ylast << 0,0,0.1;
+        double X0,Y0,Z0;
+        nhp.param<double>("X0",X0,0);
+        nhp.param<double>("Y0",Y0,0);
+        nhp.param<double>("Z0",Z0,10);
+        yhat << X0/Z0, Y0/Z0, 1.0/Z0;
+        ylast = yhat.head<2>();
+        
         lastImageTime = ros::Time::now().toSec();
         lastVelTime = lastImageTime;
         estimatorOn = true;
@@ -103,13 +111,17 @@ public:
         pointPub = nh.advertise<geometry_msgs::PointStamped>("output_point",10);
         
         // Subscribers for feature and velocity data
+        if (useVelocityMap)
+        {
+            targetVelClient = nh.serviceClient<switch_vis_exp::MapVel>("get_velocity");
+        }
         if (deadReckoning)
         {
-            targetVelSub = nh.subscribe("ugv0/odom",1,&SubscribeAndPublish::targetVelCBdeadReckoning,this);
+            targetVelSub = nh.subscribe(targetName+"/odom",1,&SubscribeAndPublish::targetVelCBdeadReckoning,this);
         }
         else
         {
-            targetVelSub = nh.subscribe("ugv0/body_vel",1,&SubscribeAndPublish::targetVelCBmocap,this);
+            targetVelSub = nh.subscribe(targetName+"/body_vel",1,&SubscribeAndPublish::targetVelCBmocap,this);
         }
         camVelSub = nh.subscribe("image/body_vel",1,&SubscribeAndPublish::camVelCB,this);
         featureSub = nh.subscribe("markerCenters",1,&SubscribeAndPublish::featureCB,this);
@@ -195,89 +207,122 @@ public:
         
         if (!estimatorOn)
         {
+            // Update so that delT in featureCB is reasonable after switch
+            lastImageTime = timeNow;
+            
             // Object trans w.r.t. image frame, for ground truth
-            Vector3d trans;
-            tf::StampedTransform transform;
-            tfl.waitForTransform("image","ugv0",timeStamp,ros::Duration(0.1));
-            tfl.lookupTransform("image","ugv0",timeStamp,transform);
-            tf::Vector3 temp_trans = transform.getOrigin();
-            trans << temp_trans.getX(),temp_trans.getY(),temp_trans.getZ();
+            tf::StampedTransform tfTarget2Im;
+            tfl.waitForTransform("image",targetName,timeStamp,ros::Duration(0.1));
+            tfl.lookupTransform("image",targetName,timeStamp,tfTarget2Im);
+            Vector3d trans(tfTarget2Im.getOrigin().getX(), tfTarget2Im.getOrigin().getY(), tfTarget2Im.getOrigin().getZ());
             
             // Ground truth
             Vector3d y;
             y << trans.segment<2>(0)/trans(2),1/trans(2);
-            ylast << y; // Update for optical flow
+            ylast << y.head<2>(); // Update for optical flow
             
-            // Object rotation w.r.t. image frame, for rotating target velocities into image coordinates
-            try
+            // Target velocity in camera frame
+            Vector3d vTc;
+            
+            // Get expected target velocity from velocity map
+            if (useVelocityMap)
             {
-                Quaterniond quat;
+                // service msg handle
+                switch_vis_exp::MapVel srv;
+                
+                // transform state estimate to global frame
+                tf::StampedTransform tfIm2W;
+                tfl.waitForTransform("image","world",timeStamp,ros::Duration(0.1));
+                tfl.lookupTransform("image","world",timeStamp,tfIm2W);
+                Quaterniond qIm2W(tfIm2W.getRotation().getW(),tfIm2W.getRotation().getX(),tfIm2W.getRotation().getY(),tfIm2W.getRotation().getZ());
+                Vector3d yhatWorld;
+                yhatWorld = qIm2W*Vector3d(yhat(0)/yhat(2), yhat(1)/yhat(2), 1/yhat(2));
+                
+                // Construct request
+                srv.request.pose.position.x = yhatWorld(0);
+                srv.request.pose.position.y = yhatWorld(1);
+                srv.request.pose.position.z = yhatWorld(2);
+                
+                // Call and get response
+                if (targetVelClient.call(srv))
+                {
+                    // get expected target velocity, expressed in world coordinates
+                    Vector3d vTw(srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z);
+                    
+                    // rotate velocity into image coordinate frame
+                    vTc = qIm2W.inverse()*vTw;
+                }
+                else
+                {
+                    return;
+                }
+            }
+            else
+            { // Get target velocities from communication
+                
+                // Object rotation w.r.t. image frame, for rotating target velocities into image coordinates
+                Quaterniond qTarget2Im;
                 if (deadReckoning)
                 {
                     tf::StampedTransform tfImage2World;
                     tf::StampedTransform tfOdom2Marker;
                     tfl.waitForTransform("image","world",timeStamp,ros::Duration(0.1));
                     tfl.lookupTransform("image","world",timeStamp,tfImage2World);
-                    tfl.waitForTransform("ugv0/odom","ugv0/base_footprint",timeStamp,ros::Duration(0.1));
-                    tfl.lookupTransform("ugv0/odom","ugv0/base_footprint",timeStamp,tfOdom2Marker);
+                    tfl.waitForTransform(targetName+"/odom",targetName+"/base_footprint",timeStamp,ros::Duration(0.1));
+                    tfl.lookupTransform(targetName+"/odom",targetName+"/base_footprint",timeStamp,tfOdom2Marker);
                     
                     tf::Quaternion temp_quat = tfImage2World.getRotation();
                     Quaterniond qIm2W = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
                     temp_quat = tfOdom2Marker.getRotation();
                     Quaterniond qO2M = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
-                    quat = qIm2W*qWorld2Odom*qO2M;
+                    qTarget2Im = qIm2W*qWorld2Odom*qO2M;
                 }
                 else
                 {
-                    tf::Quaternion temp_quat = transform.getRotation();
-                    quat = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
+                    tf::Quaternion temp_quat = tfTarget2Im.getRotation();
+                    qTarget2Im = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
                 }
                 
                 // Target velocities expressed in camera coordinates
-                Vector3d vTc = quat*vTt;
-                
-                // Update so that delT in featureCB is reasonable after switch
-                lastImageTime = timeNow;
-                
-                double y1hatDot = 0;
-                double y2hatDot = 0;
-                double y3hatDot = 0;
-                if (usePredictor)
-                {
-                    // Convert to scalars to match notation in papers
-                    double vc1 = vCc(0);        double vc2 = vCc(1);        double vc3 = vCc(2);
-                    double vq1 = vTc(0);        double vq2 = vTc(1);        double vq3 = vTc(2);
-                    double w1 = wGCc(0);        double w2 = wGCc(1);        double w3 = wGCc(2);
-                    double y1hat = yhat(0);     double y2hat = yhat(1);     double y3hat = yhat(2);
-                    
-                    // Predictor
-                    double Omega1 = w3*y2hat - w2 - w2*pow(y1hat,2) + w1*y1hat*y2hat;
-                    double Omega2 = w1 - w3*y1hat - w2*y1hat*y2hat + w1*pow(y2hat,2);
-                    double xi1 = (vc3*y1hat - vc1)*y3hat;
-                    double xi2 = (vc3*y2hat - vc2)*y3hat;
-                    
-                    y1hatDot = Omega1 + xi1 + vq1*y3hat - y1hat*vq3*y3hat;
-                    y2hatDot = Omega2 + xi2 + vq2*y3hat - y2hat*vq3*y3hat;
-                    y3hatDot = vc3*pow(y3hat,2) - (w2*y1hat - w1*y2hat)*y3hat - vq3*pow(y3hat,2);
-                }
-                else
-                {
-                    y1hatDot = 0;
-                    y2hatDot = 0;
-                    y3hatDot = 0;
-                }
-                
-                // Update states
-                Vector3d yhatDot;
-                yhatDot << y1hatDot, y2hatDot, y3hatDot;
-                yhat += yhatDot*delT;
-                
-                // Publish output
-                publishOutput(y,yhat,trans,timeStamp);
+                vTc = qTarget2Im*vTt;
             }
-            catch (tf::TransformException e)
+            
+            // Predictor/ZOH
+            double y1hatDot = 0;
+            double y2hatDot = 0;
+            double y3hatDot = 0;
+            if (usePredictor)
             {
+                // Convert to scalars to match notation in papers
+                double vc1 = vCc(0);        double vc2 = vCc(1);        double vc3 = vCc(2);
+                double vq1 = vTc(0);        double vq2 = vTc(1);        double vq3 = vTc(2);
+                double w1 = wGCc(0);        double w2 = wGCc(1);        double w3 = wGCc(2);
+                double y1hat = yhat(0);     double y2hat = yhat(1);     double y3hat = yhat(2);
+                
+                // Predictor
+                double Omega1 = w3*y2hat - w2 - w2*pow(y1hat,2) + w1*y1hat*y2hat;
+                double Omega2 = w1 - w3*y1hat - w2*y1hat*y2hat + w1*pow(y2hat,2);
+                double xi1 = (vc3*y1hat - vc1)*y3hat;
+                double xi2 = (vc3*y2hat - vc2)*y3hat;
+                
+                y1hatDot = Omega1 + xi1 + vq1*y3hat - y1hat*vq3*y3hat;
+                y2hatDot = Omega2 + xi2 + vq2*y3hat - y2hat*vq3*y3hat;
+                y3hatDot = vc3*pow(y3hat,2) - (w2*y1hat - w1*y2hat)*y3hat - vq3*pow(y3hat,2);
             }
+            else
+            {
+                y1hatDot = 0;
+                y2hatDot = 0;
+                y3hatDot = 0;
+            }
+            
+            // Update states
+            Vector3d yhatDot;
+            yhatDot << y1hatDot, y2hatDot, y3hatDot;
+            yhat += yhatDot*delT;
+            
+            // Publish output
+            publishOutput(y,yhat,timeStamp);
         }
     }
     
@@ -312,19 +357,22 @@ public:
         lastImageTime = timeNow;
         
         // Object trans w.r.t. image frame, for ground truth
-        Vector3d trans;
-        tf::StampedTransform transform;
-        tfl.waitForTransform("image","ugv0",timeStamp,ros::Duration(0.1));
-        tfl.lookupTransform("image","ugv0",timeStamp,transform);
-        tf::Vector3 temp_trans = transform.getOrigin();
-        trans << temp_trans.getX(),temp_trans.getY(),temp_trans.getZ();
+        tf::StampedTransform tfTarget2Im;
+        tfl.waitForTransform("image",targetName,timeStamp,ros::Duration(0.1));
+        tfl.lookupTransform("image",targetName,timeStamp,tfTarget2Im);
+        Vector3d trans(tfTarget2Im.getOrigin().getX(), tfTarget2Im.getOrigin().getY(), tfTarget2Im.getOrigin().getZ());
         
-        // Object pose w.r.t. image frame
+        // Ground truth
+        Vector3d y(trans(0)/trans(2), trans(1)/trans(2), 1/trans(2));
+        
+        // Object pose w.r.t. image frame, for rotating target velocity into camera frame
+        Quaterniond qTarget2Im;
         if (deadReckoning)
         {
             tfl.waitForTransform("image",string("marker")+markerID,timeStamp,ros::Duration(0.1));
-            tfl.lookupTransform("image",string("marker")+markerID,timeStamp,transform);
-            
+            tfl.lookupTransform("image",string("marker")+markerID,timeStamp,tfTarget2Im);
+            tf::Quaternion temp_quat = tfTarget2Im.getRotation();
+            qTarget2Im = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
             try
             {
                 // Additional transforms for predictor
@@ -332,8 +380,8 @@ public:
                 tf::StampedTransform tfMarker2Odom;
                 tfl.waitForTransform("world",string("marker")+markerID,timeStamp,ros::Duration(0.1));
                 tfl.lookupTransform("world",string("marker")+markerID,timeStamp,tfWorld2Marker);
-                tfl.waitForTransform("ugv0/base_footprint","ugv0/odom",timeStamp,ros::Duration(0.1));
-                tfl.lookupTransform("ugv0/base_footprint","ugv0/odom",timeStamp,tfMarker2Odom);
+                tfl.waitForTransform(targetName+"/base_footprint",targetName+"/odom",timeStamp,ros::Duration(0.1));
+                tfl.lookupTransform(targetName+"/base_footprint",targetName+"/odom",timeStamp,tfMarker2Odom);
                 
                 // Save transform
                 tf::Quaternion temp_quat = tfWorld2Marker.getRotation();
@@ -344,22 +392,25 @@ public:
             }
             catch (tf::TransformException e)
             {
+                return;
             }
         }
-        // else, use quaternion from image to ugv0 transform
-        tf::Quaternion temp_quat = transform.getRotation();
-        Quaterniond quat = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
+        else
+        {
+            // use quaternion from image to ugv0 transform
+            tf::Quaternion temp_quat = tfTarget2Im.getRotation();
+            qTarget2Im = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
+        }
+        
+        // Target velocities expressed in camera coordinates
+        Vector3d vTc = qTarget2Im*vTt;
         
         // Undistort image coordinates. Returns normalized Euclidean coordinates
         double ptsArray[2] = {center->x,center->y};
         cv::Mat pts(1,1,CV_64FC2,ptsArray);
         cv::Mat undistPts;
         cv::undistortPoints(pts,undistPts,camMat,distCoeffs);
-        Vector3d y;
-        y << undistPts.at<double>(0,0),undistPts.at<double>(0,1),1/trans(2);
-        
-        // Target velocities expressed in camera coordinates
-        Vector3d vTc = quat*vTt;
+        Vector2d yMeas(undistPts.at<double>(0,0),undistPts.at<double>(0,1));
         
         // Observer velocities
         Vector3d b = vTc - vCc;
@@ -369,7 +420,7 @@ public:
         double b1 = b(0);           double b2 = b(1);           double b3 = b(2);
         double w1 = w(0);           double w2 = w(1);           double w3 = w(2);
         double y1hat = yhat(0);     double y2hat = yhat(1);     double y3hat = yhat(2);
-        double y1 = y(0);           double y2 = y(1);
+        double y1 = yMeas(0);       double y2 = yMeas(1);
         double y1last = ylast(0);   double y2last = ylast(1);
         
         // Estimator
@@ -383,7 +434,7 @@ public:
         
         double y1dot = (y1 - y1last)/delT;
         double y2dot = (y2 - y2last)/delT;
-        ylast << y;
+        ylast << yMeas;
         
         double y1hatDot = h1*y3hat + p1 + k1*e1;
         double y2hatDot = h2*y3hat + p1 + k2*e2;
@@ -394,7 +445,7 @@ public:
         yhat += yhatDot*delT;
         
         // Publish output
-        publishOutput(y,yhat,trans,timeStamp);
+        publishOutput(y,yhat,timeStamp);
         
         if (!artificialSwitching)
         {
@@ -404,12 +455,11 @@ public:
     }
     
     // Method for publishing data (estimate, ground truth, etc) and publishing Point message for visualization
-    void publishOutput(Vector3d y, Vector3d yhat, Vector3d trans, ros::Time timeStamp)
+    void publishOutput(Vector3d y, Vector3d yhat, ros::Time timeStamp)
     {
         // Extra signals
-        Vector3d XYZ = trans;
-        Vector3d XYZhat;
-        XYZhat << yhat(0)/yhat(2),yhat(1)/yhat(2),1/yhat(2);
+        Vector3d XYZ(y(0)/y(2),y(1)/y(2),1/y(2));
+        Vector3d XYZhat(yhat(0)/yhat(2),yhat(1)/yhat(2),1/yhat(2));
         Vector3d error = y - yhat;
         Vector3d XYZerror = XYZ - XYZhat;
         

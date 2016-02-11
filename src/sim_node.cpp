@@ -41,6 +41,7 @@ class Sim
     double period;
     std::string cameraName;
     std::string targetName;
+    double startTime;
     
     // States
     Eigen::Vector3d camPos;
@@ -48,6 +49,7 @@ class Sim
     Eigen::Vector3d targetPos;
     Eigen::Quaterniond targetOrient;
     bool useVelocityMap;
+    bool driveCircle;
     Eigen::Vector3d camLinVel; // expressed in body coordinate system
     Eigen::Vector3d camAngVel; // expressed in body coordinate system
     Eigen::Vector3d targetLinVel; // expressed in body coordinate system
@@ -75,6 +77,7 @@ public:
         
         // Initialize states
         useVelocityMap = false;
+        driveCircle = false;
         camPos << 0,0,-10; //Eigen::Vector3d::Zero();
         camOrient = Eigen::Quaterniond::Identity();
         targetPos = Eigen::Vector3d::Zero();
@@ -89,6 +92,7 @@ public:
         markerID = 100;
         radius = 2;
         period = 30;
+        startTime = ros::Time::now().toSec();
         
         // Initialize and Publish camera info
         sensor_msgs::CameraInfo camInfoMsg;
@@ -111,7 +115,7 @@ public:
         integrateTimer = nh.createTimer(ros::Duration(intTime),&Sim::integrateCB,this,false);
         
         // Other publishers
-        velPubTimer = nh.createTimer(ros::Duration(1.0/300.0),&Sim::velPubCB,this,false);
+        velPubTimer = nh.createTimer(ros::Duration(1.0/30.0),&Sim::velPubCB,this,false);
         imagePubTimer = nh.createTimer(ros::Duration(1.0/30.0),&Sim::imagePubCB,this,false);
     }
     
@@ -125,7 +129,7 @@ public:
         camOrient.normalize();
         
         // Integrate target pose
-        get_target_velocity_from_map();
+        
         targetPos += targetOrient*targetLinVel*intTime; // convert from body to world and integrate
         Eigen::Vector4d targetOrientTemp(targetOrient.w(),targetOrient.x(),targetOrient.y(),targetOrient.z());
         targetOrientTemp += 0.5*diffMat(targetOrient)*targetAngVel*intTime;
@@ -144,6 +148,14 @@ public:
         targetTransform.setRotation(tf::Quaternion(targetOrient.x(),targetOrient.y(),targetOrient.z(),targetOrient.w()));
         tfbr.sendTransform(tf::StampedTransform(targetTransform,ros::Time::now(),"world",targetName));
         tfbr.sendTransform(tf::StampedTransform(targetTransform,ros::Time::now(),targetName+"/odom",targetName+"/base_footprint"));
+        
+        // Publish marker tf for dead reckoning
+        tf::Transform tfMarker2Cam;
+        Eigen::Vector3d tM2C = camOrient.inverse()*(targetPos - camPos);
+        Eigen::Quaterniond qM2C = camOrient.inverse()*targetOrient;
+        targetTransform.setOrigin(tf::Vector3(tM2C(0),tM2C(1),tM2C(2)));
+        targetTransform.setRotation(tf::Quaternion(qM2C.x(),qM2C.y(),qM2C.z(),qM2C.w()));
+        tfbr.sendTransform(tf::StampedTransform(targetTransform,ros::Time::now(),"image","marker100"));
     }
     
     void velPubCB(const ros::TimerEvent& event)
@@ -161,6 +173,13 @@ public:
         camVelPub.publish(twistMsg);
         
         // Publish target velocities
+        if (useVelocityMap) {get_target_velocity_from_map();}
+        if (driveCircle)
+        {
+            double timeNow = twistMsg.header.stamp.toSec();
+            targetLinVel << std::sin(3*(timeNow - startTime)), std::cos(3*(timeNow - startTime)), 0;
+            targetAngVel << 0,0,0;
+        }
         twistMsg.twist.linear.x = targetLinVel(0);
         twistMsg.twist.linear.y = targetLinVel(1);
         twistMsg.twist.linear.z = targetLinVel(2);
@@ -175,6 +194,15 @@ public:
         odomMsg.header.frame_id = targetName+"/odom";
         odomMsg.child_frame_id = targetName+"/base_footprint";
         odomMsg.twist.twist = twistMsg.twist;
+        targetOdomPub.publish(odomMsg);
+        
+        /*
+        std::cout << "VelPubCB:" << std::endl;
+        std::cout << "time: " << twistMsg.header.stamp.toSec() << std::endl;
+        std::cout << "targetLinVel: " << targetLinVel.transpose() << std::endl;
+        std::cout << "t2cPos: " << (camOrient.inverse()*(targetPos - camPos)).transpose() << std::endl;
+        std::cout << "useVelocityMap: " << useVelocityMap << std::endl;
+        */
     }
     
     void imagePubCB(const ros::TimerEvent& event)
@@ -203,27 +231,24 @@ public:
     
     void get_target_velocity_from_map()
     {
-        if (useVelocityMap)
+        // service msg handle
+        switch_vis_exp::MapVel srv;
+        
+        // Construct request
+        srv.request.pose.position.x = targetPos(0);
+        srv.request.pose.position.y = targetPos(1);
+        srv.request.pose.position.z = targetPos(2);
+        if (velocityMapClient.call(srv))
         {
-            // service msg handle
-            switch_vis_exp::MapVel srv;
+            // get velocity
+            Eigen::Vector3d des_lin_vel;
+            Eigen::Vector3d des_ang_vel;
+            des_lin_vel << srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z;
+            des_ang_vel << srv.response.twist.angular.x, srv.response.twist.angular.y, srv.response.twist.angular.z;
             
-            // Construct request
-            srv.request.pose.position.x = targetPos(0);
-            srv.request.pose.position.y = targetPos(1);
-            srv.request.pose.position.z = targetPos(2);
-            if (velocityMapClient.call(srv))
-            {
-                // get velocity
-                Eigen::Vector3d des_lin_vel;
-                Eigen::Vector3d des_ang_vel;
-                des_lin_vel << srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z;
-                des_ang_vel << srv.response.twist.angular.x, srv.response.twist.angular.y, srv.response.twist.angular.z;
-                
-                // rotate velocity into target body frame
-                targetLinVel = targetOrient.inverse()*des_lin_vel;
-                targetAngVel = targetOrient.inverse()*des_ang_vel;
-            }
+            // rotate velocity into target body frame
+            targetLinVel = targetOrient.inverse()*des_lin_vel;
+            targetAngVel = targetOrient.inverse()*des_ang_vel;
         }
     }
     
@@ -232,12 +257,18 @@ public:
         if (joyMsg->buttons[2]) // x - drive along velocity map
         {
             useVelocityMap = true;
+            driveCircle = false;
             /*
             radius += 0.1*(joyMsg->buttons[12]-joyMsg->buttons[11]);
             period -= 10*(joyMsg->buttons[13]-joyMsg->buttons[14]);
             targetAngVel << 0, 0, 2*M_PI/period;
             targetLinVel << 2*M_PI*radius/period, 0, 0;
             */
+        }
+        else if (joyMsg->buttons[0]) // a - drive in circle
+        {
+            driveCircle = true;
+            useVelocityMap = false;
         }
         else if (joyMsg->buttons[1]) // b - reset target
         {
@@ -248,6 +279,7 @@ public:
         else
         {
             useVelocityMap = false;
+            driveCircle = false;
             Eigen::Vector3d linVel(-1*joyMsg->axes[0], -1*joyMsg->axes[1], 0);
             Eigen::Vector3d angVel(-1*joyMsg->axes[4], joyMsg->axes[3], joyMsg->axes[2]-joyMsg->axes[5]);
             if (joyMsg->buttons[5]) // Right bumper, control camera
