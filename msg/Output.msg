@@ -8,3 +8,9 @@ float64[3] XYZhat
 float64[3] XYZerror
 bool estimatorOn
 bool usePredictor
+bool deadReckoning
+bool normalizedKinematics
+bool artificialSwitching
+bool useVelocityMap
+float64 delTon
+float64 delToff

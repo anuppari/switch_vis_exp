@@ -26,8 +26,7 @@ public:
         velPub = nh.advertise<geometry_msgs::Twist>("cmd_vel_mux/input/navi",1);
         
         // get service handle
-        client = nh.serviceClient<switch_vis_exp::MapVel>("get_velocity");
-        std::cout << client.getService() << std::endl;
+        client = nh.serviceClient<switch_vis_exp::MapVel>("/get_velocity");
         
         // subscribers
         poseSub = nh.subscribe("pose",10,&turtlebot_control::poseCB,this);

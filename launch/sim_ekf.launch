@@ -19,7 +19,7 @@
     
   <!-- Estimator -->
   <node name="exp" pkg="switch_vis_exp" type="ekf_node" output="screen" >
-    <param name="camera" value="$(arg cameraName)" />
+    <param name="cameraName" value="$(arg cameraName)" />
     <param name="deadReckoning" value="$(arg deadReckoning)" />
     <param name="normalizedKinematics" value="$(arg normalizedKinematics)" />
     <param name="artificialSwitching" value="$(arg artificialSwitching)" />

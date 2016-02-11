@@ -1,14 +1,10 @@
 <launch>
   <!-- Launch Parameters -->
-  <arg name="drive" default="false" /> <!-- drive turtlebot in circles -->
+  <arg name="drive" default="true" /> <!-- drive turtlebot in circles -->
   <arg name="cameraName" default="camera" /> <!-- camera topic -->
   <arg name="recordData" default="false" /> <!-- record to rosbag -->
   <arg name="drawMarkers" default="true" /> <!-- show marker track from aruco -->
   <arg name="showViz" default="true" /> <!-- Launch rviz -->
-  <arg name="predictor" default="true" /> <!-- use predictor instead of zero order hold in estimation algorithm -->
-  <arg name="deadReckoning" default="true" /> <!-- use turtlebot onboard odometry for rotation estimation -->
-  <arg name="artificial" default="false" /> <!-- artificial switching (i.e. fake loss of visibility) -->
-  <arg name="visibilityTimeout" default="0.1" /> <!-- time to wait before instantiating predictor or zero order hold -->
   
   <!-- Launch motion capture system listener -->
   <include file="$(find mocap_optitrack)/launch/mocap.launch" />
@@ -20,8 +16,8 @@
   <!-- Launch tag tracker -->
   <include file="$(find aruco_ros)/launch/aruco.launch" >
     <arg name="cameraName" value="$(arg cameraName)" />
-    <arg name="image_frame_id" value="image" />
     <arg name="drawMarkers" value="$(arg drawMarkers)" />
+    <arg name="view" value="false" />
     <arg name="markerSize" value="0.2032" /> <!-- [meters] -->
   </include>
   
@@ -40,22 +36,11 @@
   <!-- Camera velocity from mocap filter node (backwards difference of pose) -->
   <node pkg="switch_vis_exp" type="filter_node" name="vel_filter" ns="image" output="screen" />
   
-  <!-- Move turtlebot in circle -->
-  <node if="$(arg drive)" name="drive_circle" pkg="rostopic" type="rostopic" args="pub -r 10 /ugv0/cmd_vel_mux/input/navi/raw geometry_msgs/Twist '{linear:  {x: 0.5, y: 0.0, z: 0.0}, angular: {x: 0.0,y: 0.0,z: 0.7}}'" />
-
-  <!-- Estimator -->
-  <node name="exp" pkg="switch_vis_exp" type="exp_node" output="screen" >
-    <param name="cameraName" value="$(arg cameraName)" />
-    <param name="usePredictor" value="$(arg predictor)" />
-    <param name="deadReckoning" value="$(arg deadReckoning)" />
-    <param name="artificialSwitching" value="$(arg artificial)" />
-    <param name="visibilityTimeout" value="$(arg visibilityTimeout)" />
-    <param name="k1" value="2.0" /> <!-- Gains -->
-    <param name="k2" value="2.0" /> <!-- Gains -->
-    <param name="k3" value="1.0" /> <!-- Gains -->
-    <param name="delTon" value="4.0" /> <!-- contiguous visibility time if artificial switching -->
-    <param name="delToff" value="0.5" /> <!-- contiguous invisibility time if artificial switching -->
-  </node>
+  <!-- Move turtlebot along track, xbox controller can override if joy enabled in turtlebot launch file -->
+  <group if="$(arg drive)" >
+      <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" ns="ugv0" output="screen" />
+      <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" output="screen" />
+  </group>
   
   <!-- Launch Vizualization -->
   <node if="$(arg showViz)" name="rviz" pkg="rviz" type="rviz" />

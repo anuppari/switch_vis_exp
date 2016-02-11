@@ -1,18 +1,56 @@
 <launch>
   <!-- Launch Parameters -->
   <arg name="cameraName" value="camera" />
-  <arg name="usePredictor" value="true" />
+  <arg name="targetName" value="ugv0" />
   <arg name="switching" value="true" />
+  <arg name="ekf" value="true" />
+  <arg name="estimator" value="false" />
+  <arg name="normalizedKinematics" value="false" />
+  <arg name="predictor" default="true" /> <!-- use predictor instead of zero order hold in estimation algorithm -->
+  <arg name="deadReckoning" default="true" /> <!-- use turtlebot onboard odometry for rotation estimation -->
+  <arg name="artificial" default="false" /> <!-- artificial switching (i.e. fake loss of visibility) -->
+  <arg name="visibilityTimeout" default="0.1" /> <!-- time to wait before instantiating predictor or zero order hold -->
+  <arg name="delTon" default="4.0" /> <!-- contiguous visibility time if artificial switching -->
+  <arg name="delToff" default="0.5" /> <!-- contiguous invisibility time if artificial switching -->
+  <arg name="X0" default="2.0" /> <!-- Initial condition -->
+  <arg name="Y0" default="-1.0" /> <!-- Initial condition -->
+  <arg name="Z0" default="0.1" /> <!-- Initial condition -->
+  <arg name="useVelocityMap" default="false" /> <!-- use velocity map, or communicate target velocities -->
   
   <!-- Estimator -->
-  <node name="exp" pkg="switch_vis_exp" type="exp_node" output="screen" >
-    <param name="camera" value="$(arg cameraName)" />
-    <param name="usePredictor" value="$(arg usePredictor)" />
-    <param name="switching" value="$(arg switching)" />
-    <param name="deadReckoning" value="true" />
-    <param name="visibilityTimeout" value="0.2" />
-    <param name="k1" value="20.0" />
-    <param name="k2" value="20.0" />
-    <param name="k3" value="2.0" />
+  <node if="$(arg estimator)" name="exp" pkg="switch_vis_exp" type="exp_node" output="screen" >
+    <param name="cameraName" value="$(arg cameraName)" />
+    <param name="targetName" value="$(arg targetName)" />
+    <param name="usePredictor" value="$(arg predictor)" />
+    <param name="deadReckoning" value="$(arg deadReckoning)" />
+    <param name="artificialSwitching" value="$(arg artificial)" />
+    <param name="useVelocityMap" value="$(arg useVelocityMap)" />
+    <param name="visibilityTimeout" value="$(arg visibilityTimeout)" />
+    <param name="k1" value="2.0" /> <!-- Gains -->
+    <param name="k2" value="2.0" /> <!-- Gains -->
+    <param name="k3" value="1.0" /> <!-- Gains -->
+    <param name="delTon" value="$(arg delTon)" />
+    <param name="delToff" value="$(arg delToff)" />
+    <param name="X0" value="$(arg X0)" />
+    <param name="Y0" value="$(arg Y0)" />
+    <param name="Z0" value="$(arg Z0)" />
+  </node>
+  
+  <!-- EKF -->
+  <node if="$(arg ekf)" name="exp" pkg="switch_vis_exp" type="ekf_node" output="screen" >
+    <param name="cameraName" value="$(arg cameraName)" />
+    <param name="targetName" value="$(arg targetName)" />
+    <param name="deadReckoning" value="$(arg deadReckoning)" />
+    <param name="normalizedKinematics" value="$(arg normalizedKinematics)" />
+    <param name="artificialSwitching" value="$(arg artificialSwitching)" />
+    <param name="useVelocityMap" value="$(arg useVelocityMap)" />
+    <param name="visibilityTimeout" value="$(arg visibilityTimeout)" />
+    <param name="q" value="1.0" />
+    <param name="r" value="0.01" />
+    <param name="delTon" value="$(arg delTon)" />
+    <param name="delToff" value="$(arg delToff)" />
+    <param name="X0" value="$(arg X0)" />
+    <param name="Y0" value="$(arg Y0)" />
+    <param name="Z0" value="$(arg Z0)" />
   </node>
 </launch>

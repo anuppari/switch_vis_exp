@@ -7,6 +7,7 @@
 #include <nav_msgs/Odometry.h>
 #include <aruco_ros/Center.h>
 #include <sensor_msgs/Joy.h>
+#include <switch_vis_exp/MapVel.h>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -25,6 +26,7 @@ class Sim
     ros::Publisher featurePub;
     ros::Publisher camInfoPub;
     ros::Subscriber joySub;
+    ros::ServiceClient velocityMapClient;
     tf::TransformBroadcaster tfbr;
     ros::Timer integrateTimer;
     ros::Timer velPubTimer;
@@ -45,6 +47,7 @@ class Sim
     Eigen::Quaterniond camOrient;
     Eigen::Vector3d targetPos;
     Eigen::Quaterniond targetOrient;
+    bool useVelocityMap;
     Eigen::Vector3d camLinVel; // expressed in body coordinate system
     Eigen::Vector3d camAngVel; // expressed in body coordinate system
     Eigen::Vector3d targetLinVel; // expressed in body coordinate system
@@ -67,7 +70,11 @@ public:
         camInfoPub = nh.advertise<sensor_msgs::CameraInfo>(cameraName+"/camera_info",10,true); // latched
         joySub = nh.subscribe<sensor_msgs::Joy>("/joy",1,&Sim::joyCB,this);
         
+        // velocity map service handle
+        velocityMapClient = nh.serviceClient<switch_vis_exp::MapVel>("/get_velocity");
+        
         // Initialize states
+        useVelocityMap = false;
         camPos << 0,0,-10; //Eigen::Vector3d::Zero();
         camOrient = Eigen::Quaterniond::Identity();
         targetPos = Eigen::Vector3d::Zero();
@@ -118,6 +125,7 @@ public:
         camOrient.normalize();
         
         // Integrate target pose
+        get_target_velocity_from_map();
         targetPos += targetOrient*targetLinVel*intTime; // convert from body to world and integrate
         Eigen::Vector4d targetOrientTemp(targetOrient.w(),targetOrient.x(),targetOrient.y(),targetOrient.z());
         targetOrientTemp += 0.5*diffMat(targetOrient)*targetAngVel*intTime;
@@ -193,22 +201,53 @@ public:
         featurePub.publish(msg);
     }
     
+    void get_target_velocity_from_map()
+    {
+        if (useVelocityMap)
+        {
+            // service msg handle
+            switch_vis_exp::MapVel srv;
+            
+            // Construct request
+            srv.request.pose.position.x = targetPos(0);
+            srv.request.pose.position.y = targetPos(1);
+            srv.request.pose.position.z = targetPos(2);
+            if (velocityMapClient.call(srv))
+            {
+                // get velocity
+                Eigen::Vector3d des_lin_vel;
+                Eigen::Vector3d des_ang_vel;
+                des_lin_vel << srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z;
+                des_ang_vel << srv.response.twist.angular.x, srv.response.twist.angular.y, srv.response.twist.angular.z;
+                
+                // rotate velocity into target body frame
+                targetLinVel = targetOrient.inverse()*des_lin_vel;
+                targetAngVel = targetOrient.inverse()*des_ang_vel;
+            }
+        }
+    }
+    
     void joyCB(const sensor_msgs::JoyConstPtr& joyMsg)
     {
-        if (joyMsg->buttons[2]) // x - drive in circle
+        if (joyMsg->buttons[2]) // x - drive along velocity map
         {
+            useVelocityMap = true;
+            /*
             radius += 0.1*(joyMsg->buttons[12]-joyMsg->buttons[11]);
             period -= 10*(joyMsg->buttons[13]-joyMsg->buttons[14]);
             targetAngVel << 0, 0, 2*M_PI/period;
             targetLinVel << 2*M_PI*radius/period, 0, 0;
+            */
         }
         else if (joyMsg->buttons[1]) // b - reset target
         {
+            useVelocityMap = false;
             targetPos << 0, -radius, 0;
             targetOrient.setIdentity();
         }
         else
         {
+            useVelocityMap = false;
             Eigen::Vector3d linVel(-1*joyMsg->axes[0], -1*joyMsg->axes[1], 0);
             Eigen::Vector3d angVel(-1*joyMsg->axes[4], joyMsg->axes[3], joyMsg->axes[2]-joyMsg->axes[5]);
             if (joyMsg->buttons[5]) // Right bumper, control camera

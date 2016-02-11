@@ -7,6 +7,7 @@
 #include <nav_msgs/Odometry.h>
 #include <image_geometry/pinhole_camera_model.h>
 #include <switch_vis_exp/Output.h>
+#include <switch_vis_exp/MapVel.h>
 #include <aruco_ros/Center.h>
 
 #include <opencv2/imgproc/imgproc.hpp>
@@ -17,8 +18,6 @@
 
 using namespace std;
 using namespace Eigen;
-
-double initSwitchWait = 5.0;
 
 // need a class in order publish in the callback
 class SubscribeAndPublish
@@ -41,6 +40,7 @@ class SubscribeAndPublish
     bool usePredictor;
     bool deadReckoning;
     bool artificialSwitching;
+    bool useVelocityMap;
     double visibilityTimeout;
     string cameraName;
     string markerID;
@@ -69,6 +69,7 @@ public:
         nhp.param<bool>("usePredictor", usePredictor, true);
         nhp.param<bool>("deadReckoning", deadReckoning, false);
         nhp.param<bool>("artificialSwitching", artificialSwitching, false);
+        nhp.param<bool>("useVelocityMap", useVelocityMap, true);
         nhp.param<double>("visibilityTimeout", visibilityTimeout, 0.2);
         nhp.param<string>("cameraName",cameraName,"camera");
         nhp.param<string>("markerID",markerID,"100");
@@ -121,7 +122,8 @@ public:
         else
         {
             // Initialize watchdog timer for feature visibility check
-            watchdogTimer = nh.createTimer(ros::Duration(initSwitchWait),&SubscribeAndPublish::timeout,this,true);
+            watchdogTimer = nh.createTimer(ros::Duration(visibilityTimeout),&SubscribeAndPublish::timeout,this,true);
+            watchdogTimer.stop(); // Dont start watchdog until feature first visible
         }
     }
     
@@ -397,10 +399,7 @@ public:
         if (!artificialSwitching)
         {
             // Restart watchdog timer for feature visibility check
-            if ((ros::Time::now().toSec() - initTime) > initSwitchWait)
-            {
-                watchdogTimer = nh.createTimer(ros::Duration(visibilityTimeout),&SubscribeAndPublish::timeout,this,true);
-            }
+            watchdogTimer.start();
         }
     }
     
@@ -423,8 +422,13 @@ public:
         outMsg.XYZ[0] = XYZ(0);             outMsg.XYZ[1] = XYZ(1);             outMsg.XYZ[2] = XYZ(2);
         outMsg.XYZhat[0] = XYZhat(0);       outMsg.XYZhat[1] = XYZhat(1);       outMsg.XYZhat[2] = XYZhat(2);
         outMsg.XYZerror[0] = XYZerror(0);   outMsg.XYZerror[1] = XYZerror(1);   outMsg.XYZerror[2] = XYZerror(2);
+        outMsg.delTon = delTon;             outMsg.delToff = delToff;
         outMsg.estimatorOn = estimatorOn;
         outMsg.usePredictor = usePredictor;
+        outMsg.deadReckoning = deadReckoning;
+        outMsg.normalizedKinematics = true;
+        outMsg.artificialSwitching = artificialSwitching;
+        outMsg.useVelocityMap = useVelocityMap;
         outputPub.publish(outMsg);
         
         // Publish point
