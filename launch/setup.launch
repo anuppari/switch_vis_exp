@@ -2,7 +2,6 @@
   <!-- Launch Parameters -->
   <arg name="drive" default="true" /> <!-- drive turtlebot in circles -->
   <arg name="cameraName" default="camera" /> <!-- camera topic -->
-  <arg name="recordData" default="false" /> <!-- record to rosbag -->
   <arg name="drawMarkers" default="true" /> <!-- show marker track from aruco -->
   <arg name="showViz" default="true" /> <!-- Launch rviz -->
   
@@ -34,17 +33,25 @@
   </node>
   
   <!-- Camera velocity from mocap filter node (backwards difference of pose) -->
-  <node pkg="switch_vis_exp" type="filter_node" name="vel_filter" ns="image" output="screen" />
+  <node pkg="switch_vis_exp" type="filter_node" name="image_vel_filter" ns="image" output="screen" />
+  
+  <!-- Turtlebot velocity from mocap filter node (backwards difference of pose) -->
+  <node pkg="switch_vis_exp" type="filter_node" name="turtlebot_vel_filter" ns="ugv0" output="screen" />
   
   <!-- Move turtlebot along track, xbox controller can override if joy enabled in turtlebot launch file -->
   <group if="$(arg drive)" >
     <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" >
       <param name="a" value="1.0" /> <!-- track width -->
-      <param name="b" value="1.0" /> <!-- track height -->
-      <param name="x0" value="0.0" /> <!-- track center -->
-      <param name="y0" value="0.0" /> <!-- track center -->
+      <param name="b" value="1.3" /> <!-- track height -->
+      <param name="x0" value="0.5" /> <!-- track center -->
+      <param name="y0" value="0.1" /> <!-- track center -->
+      <param name="k1" value="0.5" />
+      <param name="k2" value="0.5" />
     </node>
-    <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" ns="ugv0" output="screen" />
+    <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" ns="ugv0" output="screen" >
+      <param name="loopRate" value="20.0" />
+      <param name="kw" value="2.0" />
+    </node>
   </group>
   
   <!-- Launch Vizualization -->
@@ -52,8 +59,4 @@
   
   <!-- Launch Plot -->
   <!-- <node if="$(arg showViz)" name="rqt_plot" pkg="rqt_plot" type="rqt_plot" /> -->
-  
-  <!-- Record data -->
-  <node if="$(arg recordData)" name="record" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/no_predictor/exp_NoPred_random.bag /output /markerImage /$(arg cameraName)/camera_info /markerCenters /ugv0/pose /ugv0/odom /image/pose /image/body_vel" />
-  
 </launch>

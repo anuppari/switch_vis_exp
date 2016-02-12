@@ -212,8 +212,15 @@ public:
             
             // Object trans w.r.t. image frame, for ground truth
             tf::StampedTransform tfTarget2Im;
-            tfl.waitForTransform("image",targetName,timeStamp,ros::Duration(0.1));
-            tfl.lookupTransform("image",targetName,timeStamp,tfTarget2Im);
+            try
+            {
+                tfl.waitForTransform("image",targetName,timeStamp,ros::Duration(0.1));
+                tfl.lookupTransform("image",targetName,timeStamp,tfTarget2Im);
+            }
+            catch(tf::TransformException ex)
+            {
+                return;
+            }
             Vector3d trans(tfTarget2Im.getOrigin().getX(), tfTarget2Im.getOrigin().getY(), tfTarget2Im.getOrigin().getZ());
             
             // Ground truth
@@ -232,8 +239,15 @@ public:
                 
                 // transform state estimate to global frame
                 tf::StampedTransform tfIm2W;
-                tfl.waitForTransform("image","world",timeStamp,ros::Duration(0.1));
-                tfl.lookupTransform("image","world",timeStamp,tfIm2W);
+                try
+                {
+                    tfl.waitForTransform("image","world",timeStamp,ros::Duration(0.1));
+                    tfl.lookupTransform("image","world",timeStamp,tfIm2W);
+                }
+                catch(tf::TransformException ex)
+                {
+                    return;
+                }
                 Quaterniond qIm2W(tfIm2W.getRotation().getW(),tfIm2W.getRotation().getX(),tfIm2W.getRotation().getY(),tfIm2W.getRotation().getZ());
                 Vector3d yhatWorld;
                 yhatWorld = qIm2W*Vector3d(yhat(0)/yhat(2), yhat(1)/yhat(2), 1/yhat(2));
@@ -264,13 +278,20 @@ public:
                 Quaterniond qTarget2Im;
                 if (deadReckoning)
                 {
+                    
                     tf::StampedTransform tfImage2World;
                     tf::StampedTransform tfOdom2Marker;
-                    tfl.waitForTransform("image","world",timeStamp,ros::Duration(0.1));
-                    tfl.lookupTransform("image","world",timeStamp,tfImage2World);
-                    tfl.waitForTransform(targetName+"/odom",targetName+"/base_footprint",timeStamp,ros::Duration(0.1));
-                    tfl.lookupTransform(targetName+"/odom",targetName+"/base_footprint",timeStamp,tfOdom2Marker);
-                    
+                    try
+                    {
+                        tfl.waitForTransform("image","world",timeStamp,ros::Duration(0.1));
+                        tfl.lookupTransform("image","world",timeStamp,tfImage2World);
+                        tfl.waitForTransform(targetName+"/odom",targetName+"/base_footprint",timeStamp,ros::Duration(0.1));
+                        tfl.lookupTransform(targetName+"/odom",targetName+"/base_footprint",timeStamp,tfOdom2Marker);
+                    }
+                    catch(tf::TransformException ex)
+                    {
+                        return;
+                    }
                     tf::Quaternion temp_quat = tfImage2World.getRotation();
                     Quaterniond qIm2W = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
                     temp_quat = tfOdom2Marker.getRotation();
@@ -358,8 +379,15 @@ public:
         
         // Object trans w.r.t. image frame, for ground truth
         tf::StampedTransform tfTarget2Im;
-        tfl.waitForTransform("image",targetName,timeStamp,ros::Duration(0.1));
-        tfl.lookupTransform("image",targetName,timeStamp,tfTarget2Im);
+        try
+        {
+            tfl.waitForTransform("image",targetName,timeStamp,ros::Duration(0.1));
+            tfl.lookupTransform("image",targetName,timeStamp,tfTarget2Im);
+        }
+        catch(tf::TransformException ex)
+        {
+            return;
+        }
         Vector3d trans(tfTarget2Im.getOrigin().getX(), tfTarget2Im.getOrigin().getY(), tfTarget2Im.getOrigin().getZ());
         
         // Ground truth
@@ -369,31 +397,39 @@ public:
         Quaterniond qTarget2Im;
         if (deadReckoning)
         {
-            tfl.waitForTransform("image",string("marker")+markerID,timeStamp,ros::Duration(0.1));
-            tfl.lookupTransform("image",string("marker")+markerID,timeStamp,tfTarget2Im);
-            tf::Quaternion temp_quat = tfTarget2Im.getRotation();
-            qTarget2Im = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
             try
             {
-                // Additional transforms for predictor
-                tf::StampedTransform tfWorld2Marker;
-                tf::StampedTransform tfMarker2Odom;
+                tfl.waitForTransform("image",string("marker")+markerID,timeStamp,ros::Duration(0.1));
+                tfl.lookupTransform("image",string("marker")+markerID,timeStamp,tfTarget2Im);
+            }
+            catch(tf::TransformException ex)
+            {
+                return;
+            }
+            tf::Quaternion temp_quat = tfTarget2Im.getRotation();
+            qTarget2Im = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
+
+            // Additional transforms for predictor
+            tf::StampedTransform tfWorld2Marker;
+            tf::StampedTransform tfMarker2Odom;
+            try
+            {
                 tfl.waitForTransform("world",string("marker")+markerID,timeStamp,ros::Duration(0.1));
                 tfl.lookupTransform("world",string("marker")+markerID,timeStamp,tfWorld2Marker);
                 tfl.waitForTransform(targetName+"/base_footprint",targetName+"/odom",timeStamp,ros::Duration(0.1));
                 tfl.lookupTransform(targetName+"/base_footprint",targetName+"/odom",timeStamp,tfMarker2Odom);
-                
-                // Save transform
-                tf::Quaternion temp_quat = tfWorld2Marker.getRotation();
-                Quaterniond qW2M = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
-                temp_quat = tfMarker2Odom.getRotation();
-                Quaterniond qM2O = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
-                qWorld2Odom = qW2M*qM2O;
             }
-            catch (tf::TransformException e)
+            catch(tf::TransformException ex)
             {
                 return;
             }
+            
+            // Save transform
+            temp_quat = tfWorld2Marker.getRotation();
+            Quaterniond qW2M = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
+            temp_quat = tfMarker2Odom.getRotation();
+            Quaterniond qM2O = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
+            qWorld2Odom = qW2M*qM2O;
         }
         else
         {

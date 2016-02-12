@@ -2,7 +2,8 @@
   <!-- Launch Parameters -->
   <arg name="cameraName" value="camera" />
   <arg name="targetName" value="ugv0" />
-  <arg name="ekf" value="true" />
+  <arg name="recordData" default="true" /> <!-- record to rosbag -->
+  <arg name="ekf" value="false" />
   <arg name="estimator" value="true" />
   <arg name="normalizedKinematics" value="false" />
   <arg name="predictor" default="true" /> <!-- use predictor instead of zero order hold in estimation algorithm -->
@@ -10,10 +11,10 @@
   <arg name="artificialSwitching" default="false" /> <!-- artificial switching (i.e. fake loss of visibility) -->
   <arg name="visibilityTimeout" default="0.1" /> <!-- time to wait before instantiating predictor or zero order hold -->
   <arg name="delTon" default="4.0" /> <!-- contiguous visibility time if artificial switching -->
-  <arg name="delToff" default="0.5" /> <!-- contiguous invisibility time if artificial switching -->
+  <arg name="delToff" default="1.0" /> <!-- contiguous invisibility time if artificial switching -->
   <arg name="X0" default="2.0" /> <!-- Initial condition -->
   <arg name="Y0" default="-1.0" /> <!-- Initial condition -->
-  <arg name="Z0" default="0.1" /> <!-- Initial condition -->
+  <arg name="Z0" default="10.0" /> <!-- Initial condition -->
   <arg name="useVelocityMap" default="true" /> <!-- use velocity map, or communicate target velocities -->
   
   <!-- Estimator -->
@@ -46,8 +47,8 @@
     <param name="artificialSwitching" value="$(arg artificialSwitching)" />
     <param name="useVelocityMap" value="$(arg useVelocityMap)" />
     <param name="visibilityTimeout" value="$(arg visibilityTimeout)" />
-    <param name="q" value="1.0" />
-    <param name="r" value="0.01" />
+    <param name="q" value="0.5" />
+    <param name="r" value="1.0" />
     <param name="delTon" value="$(arg delTon)" />
     <param name="delToff" value="$(arg delToff)" />
     <param name="X0" value="$(arg X0)" />
@@ -56,4 +57,7 @@
     <remap from="output" to="ekf/output" />
     <remap from="output_point" to="ekf/output_point" />
   </node>
+  
+  <!-- Record data -->
+  <node if="$(arg recordData)" name="record" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/predictor/exp_Pred_velMap_random.bag /ekf/output /exp/output /markerImage /$(arg cameraName)/camera_info /markerCenters /ugv0/pose /ugv0/odom /image/pose /image/body_vel /tf" />
 </launch>
