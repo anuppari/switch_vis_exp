@@ -26,11 +26,11 @@
   
   <!-- Launch world to image pose publisher (i.e. publish pose messages for the corresponding tf) -->
   <node pkg="robot_pose_publisher" type="robot_pose_publisher" name="robot_pose_publisher" output="screen" >
-      <param name="map_frame" value="world" />
-      <param name="base_frame" value="image" />
-      <param name="publish_frequency" value="360.0" />
-      <param name="is_stamped" value="true" />
-      <remap from="robot_pose" to="image/pose" />
+    <param name="map_frame" value="world" />
+    <param name="base_frame" value="image" />
+    <param name="publish_frequency" value="360.0" />
+    <param name="is_stamped" value="true" />
+    <remap from="robot_pose" to="image/pose" />
   </node>
   
   <!-- Camera velocity from mocap filter node (backwards difference of pose) -->
@@ -38,8 +38,13 @@
   
   <!-- Move turtlebot along track, xbox controller can override if joy enabled in turtlebot launch file -->
   <group if="$(arg drive)" >
-      <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" />
-      <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" ns="ugv0" output="screen" />
+    <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" >
+      <param name="a" value="1.0" /> <!-- track width -->
+      <param name="b" value="1.0" /> <!-- track height -->
+      <param name="x0" value="0.0" /> <!-- track center -->
+      <param name="y0" value="0.0" /> <!-- track center -->
+    </node>
+    <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" ns="ugv0" output="screen" />
   </group>
   
   <!-- Launch Vizualization -->
