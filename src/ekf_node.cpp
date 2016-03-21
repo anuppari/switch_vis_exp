@@ -617,7 +617,11 @@ public:
         {
             XYZ = y;
             XYZhat = yhat;
-            error << y(0)/y(2) - yhat(0)/yhat(2), y(1)/y(2) - yhat(1)/yhat(2), 1/y(2) - 1/yhat(2);
+            Vector3d tempY(y(0)/y(2), y(1)/y(2), 1/y(2));
+            Vector3d tempYhat(yhat(0)/yhat(2), yhat(1)/yhat(2), 1/yhat(2));
+            y = tempY;
+            yhat = tempYhat;
+            error = y - yhat;
             XYZerror = XYZ - XYZhat;
         }
         
