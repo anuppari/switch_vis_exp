@@ -6,7 +6,7 @@ float64[3] error
 float64[3] XYZ
 float64[3] XYZhat
 float64[3] XYZerror
-bool estimatorOn
+int32 estimatorOn
 bool usePredictor
 bool deadReckoning
 bool normalizedKinematics

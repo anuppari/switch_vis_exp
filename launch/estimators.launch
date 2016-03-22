@@ -1,11 +1,11 @@
 <launch>
   <!-- Launch Parameters -->
-  <arg name="cameraName" value="camera" />
-  <arg name="targetName" value="ugv0" />
-  <arg name="recordData" default="true" /> <!-- record to rosbag -->
-  <arg name="ekf" value="false" />
-  <arg name="estimator" value="true" />
-  <arg name="normalizedKinematics" value="false" />
+  <arg name="cameraName" default="camera" />
+  <arg name="targetName" default="ugv0" />
+  <arg name="recordData" default="false" /> <!-- record to rosbag -->
+  <arg name="ekf" default="false" />
+  <arg name="estimator" default="true" />
+  <arg name="normalizedKinematics" default="false" />
   <arg name="predictor" default="true" /> <!-- use predictor instead of zero order hold in estimation algorithm -->
   <arg name="deadReckoning" default="true" /> <!-- use turtlebot onboard odometry for rotation estimation -->
   <arg name="artificialSwitching" default="false" /> <!-- artificial switching (i.e. fake loss of visibility) -->
