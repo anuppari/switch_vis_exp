@@ -14,11 +14,12 @@ class turtlebot_control
     ros::Timer controlLoop;
     ros::Publisher velPub;
     ros::Publisher desVelPub;
+    ros::Publisher desBodyVelPub;
     tf::TransformListener tfl;
     
     // parameters
-    double kw;
-    double kminus;
+    double kw1;
+    double kw2;
     double loopRate;
     std::string turtlebotName;
     
@@ -27,14 +28,15 @@ public:
     {
         // parameters
         ros::NodeHandle nhp("~");
-        nhp.param<double>("kw",kw,1);
-        nhp.param<double>("kminus",kminus,0.2);
+        nhp.param<double>("kw1",kw1,1);
+        nhp.param<double>("kw2",kw2,1);
         nhp.param<double>("loopRate",loopRate,10); //Hz
         turtlebotName = ros::names::clean(ros::this_node::getNamespace()).substr(1,std::string::npos);
         
         // publishers
         velPub = nh.advertise<geometry_msgs::Twist>("cmd_vel_mux/input/navi",1);
         desVelPub = nh.advertise<geometry_msgs::Twist>("cmd_vel_des",1);
+        desBodyVelPub = nh.advertise<geometry_msgs::Twist>("cmd_body_vel_des",1);
         
         // get service handle
         client = nh.serviceClient<switch_vis_exp::MapVel>("/get_velocity");
@@ -79,22 +81,42 @@ public:
             
             // get orientation of turtlebot
             Eigen::Quaterniond quat(orientation.getW(), orientation.getX(), orientation.getY(), orientation.getZ());
+            double heading = 2*std::asin(orientation.getZ());
             
             // rotate velocity into turtlebot body frame
             Eigen::Vector3d des_body_vel = quat.inverse()*des_vel;
             
             // non-holonomic controller
-            Eigen::Vector3d xDir(1,0,0);
-            Eigen::Vector3d w = kw*xDir.cross(des_body_vel/des_body_vel.norm()); // angular velocity command
+            Eigen::Vector3d v;
+            v[0] = des_body_vel[0]; // - kminus*sgn(des_body_vel[0])*std::abs(w[2]);
+            Eigen::Vector3d xDot = quat*v;
+            srv.request.pose.position.x += xDot[0];
+            srv.request.pose.position.y += xDot[1];
+            srv.request.pose.position.z += xDot[2];
             
-            // publish desired
-            desVelPub.publish(srv.response.twist);
-            
-            // publish to turtlebot
-            geometry_msgs::Twist twistMsg;
-            twistMsg.linear.x = des_body_vel[0] - kminus*sgn(des_body_vel[0])*std::abs(w[2]);
-            twistMsg.angular.z = w[2];
-            velPub.publish(twistMsg);
+            if (client.call(srv))
+            {
+                Eigen::Vector3d vNext;
+                vNext << srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z;
+                Eigen::Vector3d xDir(1,0,0);
+                //Eigen::Vector3d w = kw*xDir.cross(des_body_vel/des_body_vel.norm()); // angular velocity command
+                Eigen::Vector3d crossTerm = xDir.cross(des_body_vel/des_body_vel.norm());
+                Eigen::Vector3d w = kw1*crossTerm + kw2*(((vNext/vNext.norm() - des_vel/des_vel.norm())*loopRate).norm())*((des_vel.cross(vNext)).normalized());
+                
+                // publish desired
+                desVelPub.publish(srv.response.twist);
+                geometry_msgs::Twist bodyTwist;
+                bodyTwist.linear.x = des_body_vel[0];
+                bodyTwist.linear.y = des_body_vel[1];
+                bodyTwist.linear.z = des_body_vel[2];
+                desBodyVelPub.publish(bodyTwist);
+                
+                // publish to turtlebot
+                geometry_msgs::Twist twistMsg;
+                twistMsg.linear.x = v[0];
+                twistMsg.angular.z = w[2];
+                velPub.publish(twistMsg);
+            }
         }
     }
     

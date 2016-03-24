@@ -3,7 +3,7 @@
   <arg name="drive" default="true" /> <!-- drive turtlebot in circles -->
   <arg name="cameraName" default="camera" /> <!-- camera topic -->
   <arg name="drawMarkers" default="true" /> <!-- show marker track from aruco -->
-  <arg name="showViz" default="true" /> <!-- Launch rviz -->
+  <arg name="showViz" default="false" /> <!-- Launch rviz -->
   
   <!-- Launch motion capture system listener -->
   <include file="$(find mocap_optitrack)/launch/mocap.launch" />
@@ -49,8 +49,9 @@
       <param name="k2" value="0.5" />
     </node>
     <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" ns="ugv0" output="screen" >
-      <param name="loopRate" value="20.0" />
-      <param name="kw" value="2.0" />
+      <param name="loopRate" value="50.0" />
+      <param name="kw1" value="15.0" />
+      <param name="kw2" value="0.022" />
     </node>
   </group>
   
