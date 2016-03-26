@@ -15,7 +15,7 @@
   <arg name="X0" default="2.0" /> <!-- Initial condition -->
   <arg name="Y0" default="-1.0" /> <!-- Initial condition -->
   <arg name="Z0" default="10.0" /> <!-- Initial condition -->
-  <arg name="useVelocityMap" default="true" /> <!-- use velocity map, or communicate target velocities -->
+  <arg name="useVelocityMap" default="false" /> <!-- use velocity map, or communicate target velocities -->
   
   <!-- Estimator -->
   <node if="$(arg estimator)" name="exp" pkg="switch_vis_exp" type="exp_node" output="screen" >

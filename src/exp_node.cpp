@@ -217,10 +217,7 @@ public:
                 tfl.waitForTransform("image",targetName,timeStamp,ros::Duration(0.1));
                 tfl.lookupTransform("image",targetName,timeStamp,tfTarget2Im);
             }
-            catch(tf::TransformException ex)
-            {
-                return;
-            }
+            catch(tf::TransformException ex) { return; }
             Vector3d trans(tfTarget2Im.getOrigin().getX(), tfTarget2Im.getOrigin().getY(), tfTarget2Im.getOrigin().getZ());
             
             // Ground truth
@@ -244,10 +241,7 @@ public:
                     tfl.waitForTransform("image","world",timeStamp,ros::Duration(0.1));
                     tfl.lookupTransform("image","world",timeStamp,tfIm2W);
                 }
-                catch(tf::TransformException ex)
-                {
-                    return;
-                }
+                catch(tf::TransformException ex) { return; }
                 Quaterniond qIm2W(tfIm2W.getRotation().getW(),tfIm2W.getRotation().getX(),tfIm2W.getRotation().getY(),tfIm2W.getRotation().getZ());
                 Vector3d yhatWorld;
                 yhatWorld = qIm2W*Vector3d(yhat(0)/yhat(2), yhat(1)/yhat(2), 1/yhat(2));
@@ -266,10 +260,7 @@ public:
                     // rotate velocity into image coordinate frame
                     vTc = qIm2W.inverse()*vTw;
                 }
-                else
-                {
-                    return;
-                }
+                else { return; }
             }
             else
             { // Get target velocities from communication
@@ -288,10 +279,7 @@ public:
                         tfl.waitForTransform(targetName+"/odom",targetName+"/base_footprint",timeStamp,ros::Duration(0.1));
                         tfl.lookupTransform(targetName+"/odom",targetName+"/base_footprint",timeStamp,tfOdom2Marker);
                     }
-                    catch(tf::TransformException ex)
-                    {
-                        return;
-                    }
+                    catch(tf::TransformException ex) { return; }
                     tf::Quaternion temp_quat = tfImage2World.getRotation();
                     Quaterniond qIm2W = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
                     temp_quat = tfOdom2Marker.getRotation();
@@ -342,6 +330,18 @@ public:
             yhatDot << y1hatDot, y2hatDot, y3hatDot;
             yhat += yhatDot*delT;
             
+            if (yhat.hasNaN())
+            {
+                ros::shutdown();
+                std::cout << "vTt: " << vTt.transpose() << std::endl;
+                std::cout << "vTc: " << vTc.transpose() << std::endl;
+                std::cout << "delT: " << delT << std::endl;
+                std::cout << "y1hatDot: " << y1hatDot << std::endl;
+                std::cout << "y2hatDot: " << y2hatDot << std::endl;
+                std::cout << "y3hatDot: " << y3hatDot << std::endl;
+                std::cout << std::endl << std::endl;
+            }
+            
             // Publish output
             publishOutput(y,yhat,timeStamp);
         }
@@ -351,18 +351,12 @@ public:
     void featureCB(const aruco_ros::CenterConstPtr& center)
     {
         // Disregard erroneous tag tracks
-        if (markerID.compare(center->header.frame_id) != 0)
-        {
-            return;
-        }
+        if (markerID.compare(center->header.frame_id) != 0) { return; }
         
         // Switching
         if (artificialSwitching)
         {
-            if (!estimatorOn)
-            {
-                return;
-            }
+            if (!estimatorOn) { return; }
         }
         else
         {
@@ -376,6 +370,7 @@ public:
         double timeNow = timeStamp.toSec();
         double delT = timeNow - lastImageTime;
         lastImageTime = timeNow;
+        if (delT == 0) { return; } // skip frame if camera driver misfires
         
         // Object trans w.r.t. image frame, for ground truth
         tf::StampedTransform tfTarget2Im;
@@ -384,10 +379,7 @@ public:
             tfl.waitForTransform("image",targetName,timeStamp,ros::Duration(0.1));
             tfl.lookupTransform("image",targetName,timeStamp,tfTarget2Im);
         }
-        catch(tf::TransformException ex)
-        {
-            return;
-        }
+        catch(tf::TransformException ex) { return; }
         Vector3d trans(tfTarget2Im.getOrigin().getX(), tfTarget2Im.getOrigin().getY(), tfTarget2Im.getOrigin().getZ());
         
         // Ground truth
@@ -402,10 +394,7 @@ public:
                 tfl.waitForTransform("image",string("marker")+markerID,timeStamp,ros::Duration(0.1));
                 tfl.lookupTransform("image",string("marker")+markerID,timeStamp,tfTarget2Im);
             }
-            catch(tf::TransformException ex)
-            {
-                return;
-            }
+            catch(tf::TransformException ex) { return; }
             tf::Quaternion temp_quat = tfTarget2Im.getRotation();
             qTarget2Im = Quaterniond(temp_quat.getW(),temp_quat.getX(),temp_quat.getY(),temp_quat.getZ());
 
@@ -419,10 +408,7 @@ public:
                 tfl.waitForTransform(targetName+"/base_footprint",targetName+"/odom",timeStamp,ros::Duration(0.1));
                 tfl.lookupTransform(targetName+"/base_footprint",targetName+"/odom",timeStamp,tfMarker2Odom);
             }
-            catch(tf::TransformException ex)
-            {
-                return;
-            }
+            catch(tf::TransformException ex) { return; }
             
             // Save transform
             temp_quat = tfWorld2Marker.getRotation();
