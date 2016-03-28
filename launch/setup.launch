@@ -1,6 +1,6 @@
 <launch>
   <!-- Launch Parameters -->
-  <arg name="drive" default="true" /> <!-- drive turtlebot in circles -->
+  <arg name="drive" default="false" /> <!-- drive turtlebot in circles -->
   <arg name="cameraName" default="camera" /> <!-- camera topic -->
   <arg name="drawMarkers" default="true" /> <!-- show marker track from aruco -->
   <arg name="showViz" default="true" /> <!-- Launch rviz -->
