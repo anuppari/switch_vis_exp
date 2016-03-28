@@ -1,6 +1,6 @@
 <launch>
   <!-- Launch Parameters -->
-  <arg name="drive" default="false" /> <!-- drive turtlebot in circles -->
+  <arg name="drive" default="true" /> <!-- drive turtlebot in circles -->
   <arg name="cameraName" default="camera" /> <!-- camera topic -->
   <arg name="drawMarkers" default="true" /> <!-- show marker track from aruco -->
   <arg name="showViz" default="true" /> <!-- Launch rviz -->
@@ -9,7 +9,7 @@
   <include file="$(find mocap_optitrack)/launch/mocap.launch" />
   
   <!-- Launch camera driver -->
-  <include file="$(find ueye_cam)/launch/rgb8.launch" />
+  <include file="$(find ueye_cam)/launch/cam.launch" />
   <!-- <include file="$(find bluefox2)/launch/single_node.launch" /> -->
   
   <!-- Launch tag tracker -->

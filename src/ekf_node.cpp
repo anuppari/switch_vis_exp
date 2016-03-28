@@ -265,19 +265,20 @@ public:
                 tf::StampedTransform tfIm2W;
                 try
                 {
-                    tfl.waitForTransform("image","world",timeStamp,ros::Duration(0.1));
-                    tfl.lookupTransform("image","world",timeStamp,tfIm2W);
+                    tfl.waitForTransform("world","image",timeStamp,ros::Duration(0.1));
+                    tfl.lookupTransform("world","image",timeStamp,tfIm2W);
                 }
                 catch(tf::TransformException ex) { return; }
                 Quaterniond qIm2W(tfIm2W.getRotation().getW(),tfIm2W.getRotation().getX(),tfIm2W.getRotation().getY(),tfIm2W.getRotation().getZ());
+                Vector3d tIm2W(tfIm2W.getOrigin().getX(),tfIm2W.getOrigin().getY(),tfIm2W.getOrigin().getZ());
                 Vector3d xhatWorld;
                 if (normalizedKinematics)
                 {
-                    xhatWorld = qIm2W*Vector3d(xhat(0)/xhat(2), xhat(1)/xhat(2), 1/xhat(2));
+                    xhatWorld = qIm2W*Vector3d(xhat(0)/xhat(2), xhat(1)/xhat(2), 1/xhat(2)) + tIm2W;
                 }
                 else
                 {
-                    xhatWorld << qIm2W*xhat;
+                    xhatWorld << qIm2W*xhat + tIm2W;
                 }
                 
                 // Construct request

@@ -5,7 +5,7 @@
   <!-- Launch tag tracker -->
   <include file="$(find switch_vis_exp)/launch/estimators.launch" >
     <arg name="estimator" value="true" />
-    <arg name="ekf" value="false" />
+    <arg name="ekf" value="true" />
     <arg name="recordData" value="false" />
   </include>
 </launch>

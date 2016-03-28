@@ -238,18 +238,17 @@ public:
                 tf::StampedTransform tfIm2W;
                 try
                 {
-                    tfl.waitForTransform("image","world",timeStamp,ros::Duration(0.1));
-                    tfl.lookupTransform("image","world",timeStamp,tfIm2W);
+                    tfl.waitForTransform("world","image",timeStamp,ros::Duration(0.1));
+                    tfl.lookupTransform("world","image",timeStamp,tfIm2W);
                 }
                 catch(tf::TransformException ex) { return; }
                 Quaterniond qIm2W(tfIm2W.getRotation().getW(),tfIm2W.getRotation().getX(),tfIm2W.getRotation().getY(),tfIm2W.getRotation().getZ());
-                Vector3d yhatWorld;
-                yhatWorld = qIm2W*Vector3d(yhat(0)/yhat(2), yhat(1)/yhat(2), 1/yhat(2));
+                Vector3d XYZworld = qIm2W*Vector3d(yhat(0)/yhat(2), yhat(1)/yhat(2), 1/yhat(2)) + Vector3d(tfIm2W.getOrigin().getX(),tfIm2W.getOrigin().getY(),tfIm2W.getOrigin().getZ());
                 
                 // Construct request
-                srv.request.pose.position.x = yhatWorld(0);
-                srv.request.pose.position.y = yhatWorld(1);
-                srv.request.pose.position.z = yhatWorld(2);
+                srv.request.pose.position.x = XYZworld(0);
+                srv.request.pose.position.y = XYZworld(1);
+                srv.request.pose.position.z = XYZworld(2);
                 
                 // Call and get response
                 if (targetVelClient.call(srv))
@@ -269,7 +268,6 @@ public:
                 Quaterniond qTarget2Im;
                 if (deadReckoning)
                 {
-                    
                     tf::StampedTransform tfImage2World;
                     tf::StampedTransform tfOdom2Marker;
                     try
@@ -329,18 +327,6 @@ public:
             Vector3d yhatDot;
             yhatDot << y1hatDot, y2hatDot, y3hatDot;
             yhat += yhatDot*delT;
-            
-            if (yhat.hasNaN())
-            {
-                ros::shutdown();
-                std::cout << "vTt: " << vTt.transpose() << std::endl;
-                std::cout << "vTc: " << vTc.transpose() << std::endl;
-                std::cout << "delT: " << delT << std::endl;
-                std::cout << "y1hatDot: " << y1hatDot << std::endl;
-                std::cout << "y2hatDot: " << y2hatDot << std::endl;
-                std::cout << "y3hatDot: " << y3hatDot << std::endl;
-                std::cout << std::endl << std::endl;
-            }
             
             // Publish output
             publishOutput(y,yhat,timeStamp);

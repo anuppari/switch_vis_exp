@@ -3,19 +3,19 @@
   <arg name="cameraName" default="camera" />
   <arg name="targetName" default="ugv0" />
   <arg name="recordData" default="false" /> <!-- record to rosbag -->
-  <arg name="ekf" default="false" />
+  <arg name="ekf" default="true" />
   <arg name="estimator" default="true" />
   <arg name="normalizedKinematics" default="false" />
   <arg name="predictor" default="true" /> <!-- use predictor instead of zero order hold in estimation algorithm -->
   <arg name="deadReckoning" default="true" /> <!-- use turtlebot onboard odometry for rotation estimation -->
-  <arg name="artificialSwitching" default="false" /> <!-- artificial switching (i.e. fake loss of visibility) -->
-  <arg name="visibilityTimeout" default="0.1" /> <!-- time to wait before instantiating predictor or zero order hold -->
+  <arg name="artificialSwitching" default="true" /> <!-- artificial switching (i.e. fake loss of visibility) -->
+  <arg name="visibilityTimeout" default="0.15" /> <!-- time to wait before instantiating predictor or zero order hold -->
   <arg name="delTon" default="4.0" /> <!-- contiguous visibility time if artificial switching -->
-  <arg name="delToff" default="1.0" /> <!-- contiguous invisibility time if artificial switching -->
+  <arg name="delToff" default="3.0" /> <!-- contiguous invisibility time if artificial switching -->
   <arg name="X0" default="2.0" /> <!-- Initial condition -->
   <arg name="Y0" default="-1.0" /> <!-- Initial condition -->
   <arg name="Z0" default="10.0" /> <!-- Initial condition -->
-  <arg name="useVelocityMap" default="false" /> <!-- use velocity map, or communicate target velocities -->
+  <arg name="useVelocityMap" default="true" /> <!-- use velocity map, or communicate target velocities -->
   
   <!-- Estimator -->
   <node if="$(arg estimator)" name="exp" pkg="switch_vis_exp" type="exp_node" output="screen" >

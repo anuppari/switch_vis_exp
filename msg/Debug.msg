@@ -5,6 +5,7 @@ float64 y2
 float64[3] XYZ
 float64[3] c2mPos
 float64[4] c2mQuat
+float64[3] vTw
 float64[3] vTt
 float64[3] wGTt
 float64[3] vdotTt
