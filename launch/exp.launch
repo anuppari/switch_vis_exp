@@ -10,7 +10,7 @@
   <include file="$(find switch_vis_exp)/launch/estimators.launch" >
     <arg name="estimator" value="true" />
     <arg name="ekf" value="true" />
-    <arg name="recordData" value="true" />
+    <arg name="recordData" value="false" />
     <arg name="useVelocityMap" value="$(arg useVelocityMap)" />
   </include>
 </launch>

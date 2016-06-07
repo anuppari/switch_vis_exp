@@ -6,8 +6,9 @@ import numpy as np
 import itertools
 import cv2
 from aruco_ros.msg import Center
-from geometry_msgs.msg import TwistStamped
-from sensor_msgs.msg import CameraInfo
+from geometry_msgs.msg import TwistStamped, PoseStamped, Pose
+from sensor_msgs.msg import CameraInfo, Joy
+from switch_vis_exp.srv import MapVel
 
 qMult = tf.transformations.quaternion_multiply # quaternion multiplication function handle
 qInv = tf.transformations.quaternion_inverse # quaternion inverse function handle
@@ -20,25 +21,33 @@ camMat = np.array([[558.953280,0.000000,365.566775],[0.000000,557.877582,240.157
 distCoeffs = np.zeros(5)
 intRate = 200 # [hz] integration rate
 velRate = 200 # [hz] velocity data publish rate
-frameRate = 15 # [hz] marker publish rate
+frameRate = 10 # [hz] marker publish rate
 onDuration = np.array([3,5])
 offDuration = np.array([1,3])
 
 def sim():
     global t, pose, camInfoMsg
-    global centerPub, targetVelPub, camVelPub, camInfoPub, br, tfl
+    global centerPub, targetVelPub, camVelPub, camInfoPub, br, tfl, posePub, getMapVel
     global switchTimer, imageTimer, estimatorOn
+    global vc,wc,vp,wp
     
     rospy.init_node("sim")
     estimatorOn = True
     
     centerPub = rospy.Publisher("markerCenters",Center,queue_size=10)
+    posePub = rospy.Publisher("relPose",PoseStamped,queue_size=10)
     targetVelPub = rospy.Publisher("ugv0/body_vel",TwistStamped,queue_size=10)
     camVelPub = rospy.Publisher("image/body_vel",TwistStamped,queue_size=10)
     cameraName = rospy.get_param(rospy.get_name()+"/camera","camera")
     camInfoPub = rospy.Publisher(cameraName+"/camera_info",CameraInfo,queue_size=1)
+    joySub = rospy.Subscriber("joy", Joy, joyCB, queue_size=1)
     br = tf.TransformBroadcaster()
     tfl = tf.TransformListener()
+    
+    vc = np.array([0,0,0])
+    wc = np.array([0,0,0])
+    vp = np.array([0,0,0])
+    wp = np.array([0,0,0])
     
     # Camera parameters
     camInfoMsg = CameraInfo()
@@ -51,11 +60,15 @@ def sim():
         camInfoPub.publish(camInfoMsg)
         rospy.sleep(0.5)
     
+    # Target velocity service handle
+    rospy.wait_for_service('get_velocity')
+    getMapVel = rospy.ServiceProxy('get_velocity', MapVel)
+    
     # Publishers
     rospy.Timer(rospy.Duration(1.0/velRate),velPubCB)
     imageTimer = rospy.Timer(rospy.Duration(1.0/frameRate),imagePubCB)
     rospy.Timer(rospy.Duration(0.5),camInfoPubCB)
-    switchTimer = rospy.Timer(rospy.Duration(11.0),switchCB,oneshot=True)
+    #switchTimer = rospy.Timer(rospy.Duration(11.0),switchCB,oneshot=True)
     
     # Initial conditions
     startTime = rospy.get_time()
@@ -145,6 +158,21 @@ def imagePubCB(event):
     centMsg.x = imagePoint[0]
     centMsg.y = imagePoint[1]
     centerPub.publish(centMsg)
+    
+    # Publish pose
+    relPos = rotateVec(targetPos - camPos,qInv(camOrient))
+    relOrient = qMult(qInv(camOrient),targetOrient)
+    poseMsg = PoseStamped()
+    poseMsg.header.stamp = centMsg.header.stamp
+    poseMsg.header.frame_id = str(markerID)
+    poseMsg.pose.position.x = relPos[0]
+    poseMsg.pose.position.y = relPos[1]
+    poseMsg.pose.position.z = relPos[2]
+    poseMsg.pose.orientation.x = relOrient[0]
+    poseMsg.pose.orientation.y = relOrient[1]
+    poseMsg.pose.orientation.z = relOrient[2]
+    poseMsg.pose.orientation.w = relOrient[3]
+    posePub.publish(poseMsg)
 
 
 def camInfoPubCB(event):
@@ -153,14 +181,29 @@ def camInfoPubCB(event):
 
 
 def poseDyn(t,pose):
+    global vc,wc,vp,wp
+    
     camPos = pose[0:3]
     camOrient = pose[3:7]
     targetPos = pose[7:10]
     targetOrient = pose[10:]
     
-    (vc,wc,vp,wp) = velocities(t) # velocities in camera coordinates
+    #(vc,wc,vp,wp) = velocities(t) # velocities in camera coordinates
     vpg = rotateVec(vp,targetOrient)
     vcg = rotateVec(vc,camOrient)
+    
+    # Target velocity from map
+    poseMsg = Pose()
+    poseMsg.position.x = targetPos[0]
+    poseMsg.position.y = targetPos[1]
+    poseMsg.position.z = targetPos[2]
+    poseMsg.orientation.x = targetOrient[0]
+    poseMsg.orientation.y = targetOrient[1]
+    poseMsg.orientation.z = targetOrient[2]
+    poseMsg.orientation.w = targetOrient[3]
+    resp = getMapVel([poseMsg])
+    twistMsg = resp.twist[0]
+    vpg = rotateVec(np.array([twistMsg.linear.x,twistMsg.linear.y,twistMsg.linear.z]),targetOrient)
     
     camPosDot = vcg
     camOrientDot = 0.5*np.dot(differentialMat(camOrient),wc)
@@ -170,6 +213,16 @@ def poseDyn(t,pose):
     poseDot = np.concatenate((camPosDot,camOrientDot,targetPosDot,targetOrientDot));
     
     return poseDot
+
+
+def joyCB(joyData):
+    global vc,wc,vp,wp
+    
+    vc = np.array([0,0,0])
+    wc = np.array([0,0,0])
+    vp = np.array([joyData.axes[1],0,0])
+    wp = np.array([0,0,joyData.axes[0]])
+
 
 def velocities(t):
     lenT = t.size

@@ -19,10 +19,12 @@
     <arg name="view" value="false" />
     <arg name="adaptiveROI" value="true" />
     <arg name="markerSize" value="0.2032" /> <!-- [meters] -->
+    <arg name="image_frame_id" value="image" />
   </include>
   
   <!-- Launch camera to image frame tf publisher. Transform between mocap rigid body of camera and actual image coordinate system -->
-  <node pkg="tf" type="static_transform_publisher" name="image_broadcaster" args="-0.0868978 0.0104688 -0.0126028 -0.57167 -0.434797 0.441465 0.537815 camera image 100" />
+  <!-- <node pkg="tf" type="static_transform_publisher" name="image_broadcaster" args="-0.0868978 0.0104688 -0.0126028 -0.57167 -0.434797 0.441465 0.537815 camera image 100" /> -->
+  <node pkg="tf" type="static_transform_publisher" name="image_broadcaster" args="-0.0835731 -0.014743 -0.0124397 -0.509044 -0.510976 0.513705 0.464632 camera image 100" />
   
   <!-- Launch world to image pose publisher (i.e. publish pose messages for the corresponding tf) -->
   <node pkg="robot_pose_publisher" type="robot_pose_publisher" name="robot_pose_publisher" output="screen" >

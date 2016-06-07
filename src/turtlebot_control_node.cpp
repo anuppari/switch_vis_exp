@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <geometry_msgs/Twist.h>
+#include <geometry_msgs/Pose.h>
 #include <tf/transform_listener.h>
 #include <switch_vis_exp/MapVel.h>
 
@@ -64,20 +65,22 @@ public:
         switch_vis_exp::MapVel srv;
         tf::Vector3 position = transform.getOrigin();
         tf::Quaternion orientation = transform.getRotation();
-        srv.request.pose.position.x = position.getX();
-        srv.request.pose.position.y = position.getY();
-        srv.request.pose.position.z = position.getZ();
-        srv.request.pose.orientation.x = orientation.getX();
-        srv.request.pose.orientation.y = orientation.getY();
-        srv.request.pose.orientation.z = orientation.getZ();
-        srv.request.pose.orientation.w = orientation.getW();
+        geometry_msgs::Pose poseMsg;
+        poseMsg.position.x = position.getX();
+        poseMsg.position.y = position.getY();
+        poseMsg.position.z = position.getZ();
+        poseMsg.orientation.x = orientation.getX();
+        poseMsg.orientation.y = orientation.getY();
+        poseMsg.orientation.z = orientation.getZ();
+        poseMsg.orientation.w = orientation.getW();
+        srv.request.pose.push_back(poseMsg);
         
         // Call service
         if (client.call(srv))
         {
             // get velocity
             Eigen::Vector3d des_vel;
-            des_vel << srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z;
+            des_vel << srv.response.twist.at(0).linear.x, srv.response.twist.at(0).linear.y, srv.response.twist.at(0).linear.z;
             
             // get orientation of turtlebot
             Eigen::Quaterniond quat(orientation.getW(), orientation.getX(), orientation.getY(), orientation.getZ());
@@ -90,21 +93,21 @@ public:
             Eigen::Vector3d v;
             v[0] = des_body_vel[0]; // - kminus*sgn(des_body_vel[0])*std::abs(w[2]);
             Eigen::Vector3d xDot = quat*v;
-            srv.request.pose.position.x += xDot[0];
-            srv.request.pose.position.y += xDot[1];
-            srv.request.pose.position.z += xDot[2];
+            srv.request.pose.at(0).position.x += xDot[0];
+            srv.request.pose.at(0).position.y += xDot[1];
+            srv.request.pose.at(0).position.z += xDot[2];
             
             if (client.call(srv))
             {
                 Eigen::Vector3d vNext;
-                vNext << srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z;
+                vNext << srv.response.twist.at(0).linear.x, srv.response.twist.at(0).linear.y, srv.response.twist.at(0).linear.z;
                 Eigen::Vector3d xDir(1,0,0);
                 //Eigen::Vector3d w = kw*xDir.cross(des_body_vel/des_body_vel.norm()); // angular velocity command
                 Eigen::Vector3d crossTerm = xDir.cross(des_body_vel/des_body_vel.norm());
                 Eigen::Vector3d w = kw1*crossTerm + kw2*(((vNext/vNext.norm() - des_vel/des_vel.norm())*loopRate).norm())*((des_vel.cross(vNext)).normalized());
                 
                 // publish desired
-                desVelPub.publish(srv.response.twist);
+                desVelPub.publish(srv.response.twist.at(0));
                 geometry_msgs::Twist bodyTwist;
                 bodyTwist.linear.x = des_body_vel[0];
                 bodyTwist.linear.y = des_body_vel[1];
