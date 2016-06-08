@@ -5,7 +5,7 @@ import tf
 import collections
 import numpy as np
 import numpy.matlib as ml
-from geometry_msgs.msg import PoseStamped, TwistStamped
+from geometry_msgs.msg import PoseStamped, TwistStamped, Pose, Position, Quaternion
 from sensor_msgs.msg import CameraInfo #DEBUG
 
 qMult = tf.transformations.quaternion_multiply # quaternion multiplication function handle
@@ -13,8 +13,9 @@ qInv = tf.transformations.quaternion_inverse # quaternion inverse function handl
 q2m = tf.transformations.quaternion_matrix # quaternion to 4x4 transformation matrix
 
 class DataHandler:
-    def __init__(self, visibilityTimeout, tfl):
+    def __init__(self, intWindow, visibilityTimeout, tfl):
         self.tfl = tfl
+        self.intWindow = intWindow
         self.vCc = ml.zeros((3,1))
         self.wGCc = ml.zeros((3,1))
         self.vTt = ml.zeros((3,1)) #DEBUG
@@ -60,9 +61,14 @@ class DataHandler:
         self.etaBuff.append(self.eta.T)
         self.fBuff.append(f(self.eta,self.vCc,self.wGCc).T)
         self.sigmaBuff.append(sigma(self.eta,self.xCam,self.qCam).T)
+        while tBuff[-1]-tBuff[0] > self.intWindow: # more accurate then setting maxlen
+            tBuff.popleft()
+            etaBuff.popleft()
+            fBuff.popleft()
+            sigmaBuff.popleft()
         
         # Integrate
-        npTbuff = np.array(self.tBuff)
+        npTbuff = np.array(self.tBuff-self.tBuff[0])
         self.scriptEta = np.matrix(np.trapz(np.array(self.etaBuff),x=npTbuff,axis=0))
         self.scriptF = np.matrix(np.trapz(np.array(self.fBuff),x=npTbuff,axis=0))
         self.scriptY = np.matrix(np.trapz(np.array(self.sigmaBuff),x=npTbuff,axis=0))
@@ -87,10 +93,11 @@ def model_learning():
     k1 = 1
     k2 = 1
     kCL = 1
+    intWindow = 1
     visibilityTimout = rospy.get_param(nodeName+"/visibilityTimout",0.2)
     
     # Initialize object that handles all callbacks. Also initialize watchdog for feature visibility
-    callbacks = DataHandler(visibilityTimout,tfl)
+    callbacks = DataHandler(intWindow, visibilityTimout, tfl)
     
     # Subscribers
     camVelSub = rospy.Subscriber("image/body_vel", TwistStamped, callbacks.camVelCB, queue_size=1)
@@ -101,6 +108,33 @@ def model_learning():
     camSub = rospy.Subscriber("camera/camera_info",CameraInfo,camInfoCB)
     rospy.sleep(1)
     camSub.unregister()
+    
+    # Setup Neural Network
+    a = 1
+    b = 1
+    mapWidth = 1.2*a
+    mapHeight = 1.2*b
+    x0 = 0
+    y0 = 0
+    numKernalWidth = 4
+    numKernalHeight = 4
+    cov = 0.3*ml.eye(2)
+    muX = np.linspace(x0-mapWidth,x0+mapWidth,numKernalWidth)
+    muY = np.linspace(y0-mapHeight,y0+mapHeight,numKernalHeight)
+    (muX,muY) = np.meshgrid(muX,muY)
+    mu = np.asmatrix(np.vstack((muX.flatten(),muY.flatten())).T) # Nx2
+    sigma = lambda eta, xCam, qCam : sigmaGen(eta,xCam,qCam,mu,cov)
+    
+    # Generate pre-seed data
+    rospy.wait_for_service('get_velocity')
+    getMapVel = rospy.ServiceProxy('get_velocity', MapVel)
+    numPts = 200
+    eta = np.vstack((2*mapWidth*(np.random.random(numPts)-0.5),2*mapHeight*(np.random.random(numPts)-0.5)+y0,np.zeros((5,numPts))))
+    poseMsgs = [Pose(position=Point(x=etai[0,0],y=etai[0,1],z=etai[0,2]),orientation=Quaternion(x=etai[0,3],y=etai[0,4],z=etai[0,5],w=etai[0,6])) for etai in eta.T]
+    resp = getMapVel(poseMsgs)
+    bMat = np.array([np.append(np.matrix([twistMsg.linear.x,twistMsg.linear.y,twistMsg.linear.z]).T,0.5*differentialMat(etai[0,3:7].T)*np.matrix([twistMsg.angular.x,twistMsg.angular.y,twistMsg.angular.z]).T) for twistMsg, etai in zip(resp.twist,eta.T)]).transpose(2,1,0).flatten()
+    twistMsg = resp.twist[0]
+    vpg = rotateVec(np.array([twistMsg.linear.x,twistMsg.linear.y,twistMsg.linear.z]),targetOrient)
     
     # Wait for initial data
     while not callbacks.estimatorOn:
@@ -145,8 +179,27 @@ def model_learning():
         r.sleep()
 
 
-def sigma(eta,xCam,qCam):
-    return np.zeros([5,5])
+def sigmaGen(eta,xCam,qCam,mu,cov):
+    # mu: Nxdim. dim = 2 or 3
+    # eta: 7xM
+    # out: NxM
+    
+    dim = 2
+    
+    # Convert to global coordinates and setup query points
+    pts = np.zeros([eta.shape[1],1,dim) # 1 x dim x M
+    for ind,etai in enumerate(eta.T):
+        x = etai[:,0:3].T
+        q = etai[:,3:].T
+        
+        xg = rotateVec(x,qCam) + xCam
+        qg = qCam*q
+        yaw = tf.transformations.euler_from_quaternion(qg)[2]
+        
+        pts[ind,0,:] = xg[0:2] # add yaw here if dim=3
+    
+    dev = (mu.A-pts).transpose(0,2,1) 
+    return np.exp(-0.5*np.sum(dev*np.dot(np.linalg.inv(cov).A,dev).transpose(1,0,2),axis=1).T)
 
 
 def f(eta,vCc,wGCc):
