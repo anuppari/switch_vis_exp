@@ -55,8 +55,8 @@ public:
             double norm = std::pow(std::pow(ut,2)+std::pow(vt,2),0.5);
             
             // total velocity
-            double u = k1*(ut/norm + k2*up);
-            double v = k1*(vt/norm + k2*vp);
+            double u = k1*(ut/norm + k2*std::tanh(up));
+            double v = k1*(vt/norm + k2*std::tanh(vp));
             
             // response
             geometry_msgs::Twist twistMsg;

@@ -1,21 +1,32 @@
 <?xml version="1.0"?>
 
 <launch>
+    <arg name="a" value="1.1" />
+    <arg name="b" value="1.5" />
+    <arg name="x0" value="0.5" />
+    <arg name="y0" value="-0.3" />
     <node pkg="switch_vis_exp" type="sim.py" name="sim" output="screen"/>
-    <node pkg="switch_vis_exp" type="model_learning.py" name="estimator" output="screen"/>
+    <node pkg="switch_vis_exp" type="model_learning.py" name="estimator" output="screen">
+      <param name="a" value="$(arg a)" /> <!-- track width -->
+      <param name="b" value="$(arg b)" /> <!-- track height -->
+      <param name="x0" value="$(arg x0)" /> <!-- track center -->
+      <param name="y0" value="$(arg y0)" /> <!-- track center -->
+    </node>
     <node pkg="rviz" type="rviz" name="rviz" />
     
     <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" >
-      <param name="a" value="1.1" /> <!-- track width -->
-      <param name="b" value="1.5" /> <!-- track height -->
-      <param name="x0" value="0.5" /> <!-- track center -->
-      <param name="y0" value="-0.3" /> <!-- track center -->
+      <param name="a" value="$(arg a)" /> <!-- track width -->
+      <param name="b" value="$(arg b)" /> <!-- track height -->
+      <param name="x0" value="$(arg x0)" /> <!-- track center -->
+      <param name="y0" value="$(arg y0)" /> <!-- track center -->
       <param name="k1" value="0.5" />
       <param name="k2" value="0.5" />
     </node>
     
     <!-- joystick -->
+<!--
     <node pkg="joy" type="joy_node" name="joy_node">
       <param name="dev" value="/dev/input/js1"/>
     </node>
+-->
 </launch>
