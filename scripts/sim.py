@@ -64,7 +64,7 @@ def sim():
     rospy.Timer(rospy.Duration(1.0/velRate),velPubCB)
     imageTimer = rospy.Timer(rospy.Duration(1.0/frameRate),imagePubCB)
     rospy.Timer(rospy.Duration(0.5),camInfoPubCB)
-    switchTimer = rospy.Timer(rospy.Duration(11.0),switchCB,oneshot=True)
+    #switchTimer = rospy.Timer(rospy.Duration(11.0),switchCB,oneshot=True)
     
     # Initial conditions
     startTime = rospy.get_time()
