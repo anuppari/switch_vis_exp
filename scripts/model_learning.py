@@ -125,7 +125,7 @@ def model_learning():
     rospy.init_node("model_learning")
     br = tf.TransformBroadcaster()
     tfl = tf.TransformListener()
-    np.set_printoptions(precision=5,suppress=True,threshold=20000)
+    np.set_printoptions(precision=5,suppress=True,threshold=20000,linewidth=2000)
     
     # Node parameters
     nodeName = rospy.get_name()
@@ -133,7 +133,7 @@ def model_learning():
     k2 = 0.1
     kCL = 1
     intWindow = 1
-    CLstackSize = 500
+    CLstackSize = 1000
     stackFill = 0
     visibilityTimout = rospy.get_param(nodeName+"/visibilityTimout",0.2)
     
@@ -144,8 +144,8 @@ def model_learning():
     y0 = rospy.get_param(nodeName+"/y0",0.0)
     mapWidth = 2*a
     mapHeight = 2*b
-    numKernalWidth = 4
-    numKernalHeight = 4
+    numKernalWidth = 11
+    numKernalHeight = 11
     cov = 0.3*ml.eye(2)
     muX = np.linspace(x0-mapWidth,x0+mapWidth,numKernalWidth)
     muY = np.linspace(y0-mapHeight,y0+mapHeight,numKernalHeight)
@@ -183,10 +183,19 @@ def model_learning():
     numPts = 2000
     numPreSeed = CLstackSize
     stackFill = numPreSeed
-    eta = np.asmatrix(np.vstack((2*mapWidth*(np.random.random(numPts)-0.5)+x0,2*mapHeight*(np.random.random(numPts)-0.5)+y0,np.zeros((5,numPts))))) # 7xM
+    eta = np.asmatrix(np.vstack((2*mapWidth*(np.random.random(numPts)-0.5)+x0,2*mapHeight*(np.random.random(numPts)-0.5)+y0,np.zeros((4,numPts)),np.ones((1,numPts))))) # 7xM
     print "here3"
     Y = sigma(eta,xCam,qCam) # 7Mx6N
     scriptYstack[0:numPreSeed,:,:] = Y.A.reshape(numPts,7,6*numKernal)[0:numPreSeed,:,:]
+    #Ystack = Y.A.reshape(numPts,7,6*numKernal)
+    #print np.linalg.eigvals(np.sum(multArray(Ystack.transpose(0,2,1),Ystack),axis=0))
+    #print np.linalg.det(np.sum(multArray(Ystack.transpose(0,2,1),Ystack),axis=0))
+    #print Y
+    #print Y.T*Y
+    #print np.linalg.eigvals(Y[0:500*7,:].T*Y[0:500*7,:])
+    print np.linalg.cond(Y[0:500*7,:].T*Y[0:500*7,:])
+    print (Y.T*Y).shape
+    print numKernal*6
     print "here4"
     #A = scipy.linalg.block_diag(*[sig.T for i in range(7)])
     A = Y
@@ -217,13 +226,13 @@ def model_learning():
     print "here"
     
     ## Check least squares fit
-    #plotWidth = 200
-    #plotHeight = 200
+    #plotWidth = 50
+    #plotHeight = 50
     #plotX = np.linspace(x0-mapWidth,x0+mapWidth,plotWidth)
     #plotY = np.linspace(y0-mapHeight,y0+mapHeight,plotHeight)
     #(plotX,plotY) = np.meshgrid(plotX,plotY)
     #print "here1"
-    #plotEta = np.asmatrix(np.vstack((plotX.flatten(),plotY.flatten(),np.zeros((5,plotWidth*plotHeight))))) # FIX THIS BACK TO ZEROS
+    #plotEta = np.asmatrix(np.vstack((plotX.flatten(),plotY.flatten(),np.zeros((5,plotWidth*plotHeight)))))
     ##plotEta = np.asmatrix(np.vstack((plotX.flatten(),plotY.flatten(),np.zeros((1,plotWidth*plotHeight)),np.random.random([4,plotWidth*plotHeight]))))
     ##sig = sigma(plotEta,ml.zeros((3,1)),np.matrix([0,0,0,1]).T) # NxM
     #Y = sigma(plotEta,ml.zeros((3,1)),np.matrix([0,0,0,1]).T) # 7MxN
@@ -243,7 +252,7 @@ def model_learning():
     ## Plot
     #fig = plt.figure()
     #ax = fig.gca(projection='3d')
-    #ax.plot_surface(plotX,plotY,np.reshape(np.minimum(np.sum(np.square(error),axis=0),10),(plotWidth,plotHeight)),rstride=4,cstride=4,cmap=cm.coolwarm)
+    #ax.plot_surface(plotX,plotY,np.reshape(np.minimum(np.sum(np.square(error),axis=0),10),(plotWidth,plotHeight)),rstride=1,cstride=1,cmap=cm.coolwarm)
     #ax.scatter(eta[0,:].A.flatten(),eta[1,:].A.flatten(),np.zeros(eta[0,:].A.size),c='r',marker='o')
     #ax.set_zlim(-0.1,1.01)
     #plt.show()
@@ -407,9 +416,12 @@ def sigmaGen(eta,xCam,qCam,mu,cov):
     Q = rotMat(np.asmatrix(qInvArray(qCam)))
     Bq = differentialMat(q.A)
     #Bqt = differentialMat(qg.A)
-    #Y = np.zeros((M,7,6*N))
+    
     T = np.concatenate((np.concatenate((np.repeat(Q[None,:,:].A,M,axis=0),np.zeros((M,3,3))),axis=2),np.concatenate((np.zeros((M,4,3)),0.5*Bq),axis=2)),axis=1)
+    #print "h"
+    #print T
     Y = multArray(T,np.kron(np.identity(6),sigma.reshape(M,1,N)))
+    #Y = np.zeros((M,7,6*N))
     #for i in range(M):
         ##T = scipy.linalg.block_diag(Q,np.dot(Bq[i,:,:],Bqt[i,:,:].T))
         #T = scipy.linalg.block_diag(Q,0.5*Bq[i,:,:])
@@ -435,11 +447,21 @@ def f(eta,vCc,wGCc):
 def differentialMat(q):
     # q: 4xN
     # B: numpy Nx4x3
+    #print "q"
+    #print q
     N = q.shape[1]
     b0 = q[3,:].reshape(N,1,1)
     b1 = q[0,:].reshape(N,1,1)
     b2 = q[1,:].reshape(N,1,1)
     b3 = q[2,:].reshape(N,1,1)
+    #print "b0"
+    #print b0
+    #print "b1"
+    #print b1
+    #print "b2"
+    #print b2
+    #print "b3"
+    #print b3
     #B = np.matrix([[b0, -b3, b2],[b3, b0, -b1],[-b2, b1, b0],[-b1, -b2, -b3]])
     B = np.concatenate((np.concatenate((b0, -b3, b2),axis=-1),np.concatenate((b3, b0, -b1),axis=-1),np.concatenate((-b2, b1, b0),axis=-1),np.concatenate((-b1, -b2, -b3),axis=-1)),axis=-2)
      
