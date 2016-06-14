@@ -235,16 +235,18 @@ public:
         switch_vis_exp::MapVel srv;
         
         // Construct request
-        srv.request.pose.position.x = targetPos(0);
-        srv.request.pose.position.y = targetPos(1);
-        srv.request.pose.position.z = targetPos(2);
+        geometry_msgs::Pose poseMsg;
+        poseMsg.position.x = targetPos(0);
+        poseMsg.position.y = targetPos(1);
+        poseMsg.position.z = targetPos(2);
+        srv.request.pose.push_back(poseMsg);
         if (velocityMapClient.call(srv))
         {
             // get velocity
             Eigen::Vector3d des_lin_vel;
             Eigen::Vector3d des_ang_vel;
-            des_lin_vel << srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z;
-            des_ang_vel << srv.response.twist.angular.x, srv.response.twist.angular.y, srv.response.twist.angular.z;
+            des_lin_vel << srv.response.twist.at(0).linear.x, srv.response.twist.at(0).linear.y, srv.response.twist.at(0).linear.z;
+            des_ang_vel << srv.response.twist.at(0).angular.x, srv.response.twist.at(0).angular.y, srv.response.twist.at(0).angular.z;
             
             // rotate velocity into target body frame
             targetLinVel = targetOrient.inverse()*des_lin_vel;

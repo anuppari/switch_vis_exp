@@ -246,15 +246,17 @@ public:
                 Vector3d XYZworld = qIm2W*Vector3d(yhat(0)/yhat(2), yhat(1)/yhat(2), 1/yhat(2)) + Vector3d(tfIm2W.getOrigin().getX(),tfIm2W.getOrigin().getY(),tfIm2W.getOrigin().getZ());
                 
                 // Construct request
-                srv.request.pose.position.x = XYZworld(0);
-                srv.request.pose.position.y = XYZworld(1);
-                srv.request.pose.position.z = XYZworld(2);
+                geometry_msgs::Pose poseMsg;
+                poseMsg.position.x = XYZworld(0);
+                poseMsg.position.y = XYZworld(1);
+                poseMsg.position.z = XYZworld(2);
+                srv.request.pose.push_back(poseMsg);
                 
                 // Call and get response
                 if (targetVelClient.call(srv))
                 {
                     // get expected target velocity, expressed in world coordinates
-                    Vector3d vTw(srv.response.twist.linear.x, srv.response.twist.linear.y, srv.response.twist.linear.z);
+                    Vector3d vTw(srv.response.twist.at(0).linear.x, srv.response.twist.at(0).linear.y, srv.response.twist.at(0).linear.z);
                     
                     // rotate velocity into image coordinate frame
                     vTc = qIm2W.inverse()*vTw;
