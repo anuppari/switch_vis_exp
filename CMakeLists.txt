@@ -121,6 +121,7 @@ include_directories(
 add_executable(filter_node src/filter_node.cpp)
 add_executable(exp_node src/exp_node.cpp)
 add_executable(ekf_node src/ekf_node.cpp)
+add_executable(model_learning_node src/model_learning_node.cpp)
 add_executable(sim_node src/sim_node.cpp)
 add_executable(velocity_map_node src/velocity_map_node.cpp)
 add_executable(turtlebot_control_node src/turtlebot_control_node.cpp)
@@ -130,6 +131,7 @@ add_executable(turtlebot_control_node src/turtlebot_control_node.cpp)
 add_dependencies(filter_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(exp_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(ekf_node ${catkin_EXPORTED_TARGETS})
+add_dependencies(model_learning_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(sim_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(velocity_map_node ${catkin_EXPORTED_TARGETS})
 add_dependencies(turtlebot_control_node ${catkin_EXPORTED_TARGETS})
@@ -143,6 +145,10 @@ target_link_libraries(exp_node
   ${OpenCV_LIBRARIES}
 )
 target_link_libraries(ekf_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
+target_link_libraries(model_learning_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )
