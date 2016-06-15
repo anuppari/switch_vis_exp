@@ -78,10 +78,16 @@ def sim():
     
     r = rospy.Rate(intRate)
     h = 1.0/intRate
+    lastTime = rospy.get_time()
     while not rospy.is_shutdown():
-        t = np.array(rospy.get_time() - startTime)
+        # Time
+        timeNow = rospy.get_time()
+        delT = timeNow - lastTime
+        lastTime = timeNow
+        t = np.array(timeNow - startTime)
+        
         poseDot = poseDyn(t,pose)
-        pose = pose + poseDot*h
+        pose = pose + poseDot*delT
         
         # Send Transform
         camPos = pose[0:3]

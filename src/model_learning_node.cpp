@@ -8,14 +8,19 @@
 #include <geometry_msgs/TwistStamped.h>
 
 #include <Eigen/Dense>
+#include <thread>
+#include <mutex>
+#include <atomic>
 
 template <typename T>
 T trapz(std::deque<double>, std::deque<T>);
 Eigen::MatrixXd sigmaGen(const Eigen::Matrix<double, 7, Eigen::Dynamic>&, const Eigen::Vector3d&, const Eigen::Quaterniond&, const Eigen::Matrix<double, Eigen::Dynamic, 2>&, const Eigen::Matrix2d&);
 Eigen::Matrix<double, 7, 1> fFunc(const Eigen::Matrix<double, 7, 1>&, const Eigen::Vector3d&, const Eigen::Vector3d&);
-Eigen::Matrix<double,4,3> diffMat(const Eigen::Quaterniond);
+Eigen::Matrix<double,4,3> diffMat(const Eigen::Quaterniond&);
 template <typename Derived>
 Eigen::MatrixXd signum(const Eigen::MatrixBase<Derived>&);
+//void updateStack(std::atomic<bool>&, std::mutex&, const Eigen::Matrix<double,7,1>&, const Eigen::Matrix<double,7,1>&, const Eigen::MatrixXd&, std::vector< Eigen::Matrix<double,7,1> >&, std::vector< Eigen::Matrix<double,7,1> >&, std::vector< Eigen::Matrix<double,7,Eigen::Dynamic> >&);
+void updateStack(std::atomic<bool>&, std::mutex&, const Eigen::Matrix<double,7,1>&, const Eigen::Matrix<double,7,1>&, const Eigen::MatrixXd&, Eigen::VectorXd&, Eigen::VectorXd&, Eigen::MatrixXd&, Eigen::MatrixXd&, Eigen::MatrixXd&);
 
 class DataHandler
 {
@@ -71,6 +76,7 @@ public:
     
     void timeout(const ros::TimerEvent& event)
     {
+        std::cout << "predictor" << std::endl;
         estimatorOn = false;
     }
     
@@ -92,6 +98,7 @@ public:
         {
             xCam << pose->pose.position.x, pose->pose.position.y, pose->pose.position.z;
             qCam = Eigen::Quaterniond(pose->pose.orientation.w, pose->pose.orientation.x, pose->pose.orientation.y, pose->pose.orientation.z);
+            qCam.normalize();
         }
     }
     
@@ -99,10 +106,21 @@ public:
     {
         // stop timer
         watchdogTimer.stop();
+        if (!estimatorOn)
+        {
+            std::cout << "estimator" << std::endl;
+            
+            // Flush integration buffers
+            tBuff.clear();
+            etaBuff.clear();
+            fBuff.clear();
+            sigmaBuff.clear();
+        }
         
         // get pose data
         Eigen::Vector3d x(pose->pose.position.x,pose->pose.position.y,pose->pose.position.z);
         Eigen::Quaterniond q(pose->pose.orientation.w, pose->pose.orientation.x, pose->pose.orientation.y, pose->pose.orientation.z);
+        q.normalize();
         eta << x, q.vec(), q.w();
         
         // get camera pose
@@ -119,6 +137,7 @@ public:
         }
         xCam << tfCamPose.getOrigin().getX(), tfCamPose.getOrigin().getY(), tfCamPose.getOrigin().getZ();
         qCam = Eigen::Quaterniond(tfCamPose.getRotation().getW(), tfCamPose.getRotation().getX(), tfCamPose.getRotation().getY(), tfCamPose.getRotation().getZ());
+        qCam.normalize();
         
         // update integration buffers
         tBuff.push_back(pose->header.stamp.toSec());
@@ -147,6 +166,7 @@ public:
 
 void camInfoCB(const sensor_msgs::CameraInfoConstPtr& camInfoMsg) { }
 
+// CHANGE THIS TEMPLATE TO MATCH SIGNUM FUNCTION BELOW?
 template <typename T>
 T trapz(std::deque<double> tBuff, std::deque<T> dataBuff)
 {
@@ -199,7 +219,7 @@ Eigen::MatrixXd sigmaGen(const Eigen::Matrix<double, 7, Eigen::Dynamic>& eta, co
     Eigen::Matrix3d Q = qCam.inverse().toRotationMatrix();
     T.block<3,3>(0,0) = Q;
     Eigen::MatrixXd Y(7*M,6*N);
-    std::cout << "sigma" << std::endl;
+    //std::cout << "sigma" << std::endl;
     for (int i = 0; i < M; i++)
     {
         // inputs
@@ -207,7 +227,7 @@ Eigen::MatrixXd sigmaGen(const Eigen::Matrix<double, 7, Eigen::Dynamic>& eta, co
         Eigen::Quaterniond q(eta(6,i),eta(3,i),eta(4,i),eta(5,i));
         Eigen::Vector3d xg = qCam*x + xCam;
         Eigen::Quaterniond qg = qCam*q;
-        Eigen::Vector2d pts(x(0),x(1));
+        Eigen::Vector2d pts(xg(0),xg(1));
         
         // construct sigma
         Eigen::MatrixXd dev = mu.transpose().colwise() - pts;
@@ -215,11 +235,11 @@ Eigen::MatrixXd sigmaGen(const Eigen::Matrix<double, 7, Eigen::Dynamic>& eta, co
         Eigen::MatrixXd sigmaMat = Eigen::MatrixXd::Zero(6,6*N);
         for (int j = 0; j < 6; j++) { sigmaMat.block(j,j*N,1,N) = sigma/sigma.sum(); } // kron(I(6),sigma)
         
-        std::cout << sigma/sigma.sum() << std::endl;
+        //std::cout << sigma/sigma.sum() << std::endl;
         
         // construct T
         Eigen::Matrix<double, 4, 3> Bq = diffMat(q);
-        T.block<4,3>(3,3) = Bq;
+        T.block<4,3>(3,3) = 0.5*Bq;
         
         Y.middleRows(7*i,7) = T*sigmaMat;
     }
@@ -246,7 +266,7 @@ Eigen::Matrix<double, 7, 1> fFunc(const Eigen::Matrix<double, 7, 1>& eta, const 
 // B w.r.t N in the sense that nP = q*bP*q', omega is ang. vel of frame B w.r.t. N,
 // i.e. N_w_B, expressed in the B coordinate system
 // q = [x,y,z,w]
-Eigen::Matrix<double,4,3> diffMat(const Eigen::Quaterniond q)
+Eigen::Matrix<double,4,3> diffMat(const Eigen::Quaterniond& q)
 {
     Eigen::Matrix<double,4,3> B;
     B << q.w(), -q.z(), q.y(), q.z(), q.w(), -q.x(), -q.y(), q.x(), q.w(), -q.x(), -q.y(), -q.z();
@@ -258,6 +278,76 @@ Eigen::MatrixXd signum(const Eigen::MatrixBase<Derived>& inMat)
 {
     //Eigen::ArrayXXd zero = Eigen::ArrayXXd::Zero(inMat.rows(),inMat.cols);
     return ((inMat.array() > 0).template cast<double>() - (inMat.array() < 0).template cast<double>()).matrix();
+}
+
+//void updateStack(std::atomic<bool>& stackUpdateDone, std::mutex& m, const Eigen::Matrix<double,7,1>& scriptEta, const Eigen::Matrix<double,7,1>& scriptF, const Eigen::MatrixXd& scriptY, std::vector< Eigen::Matrix<double,7,1> >& etaStack, std::vector< Eigen::Matrix<double,7,1> >& scriptFstack, std::vector< Eigen::Matrix<double,7,Eigen::Dynamic> >& scriptYstack)
+void updateStack(std::atomic<bool>& stackUpdateDone, std::mutex& m, const Eigen::Matrix<double,7,1>& scriptEta, const Eigen::Matrix<double,7,1>& scriptF, const Eigen::MatrixXd& scriptY, Eigen::VectorXd& etaStack, Eigen::VectorXd& scriptFstack, Eigen::MatrixXd& scriptYstack, Eigen::MatrixXd& term1, Eigen::MatrixXd& term2)
+{
+    // Copy data
+    m.lock();
+    Eigen::Matrix<double,7,1> scriptEtaHere = scriptEta;
+    Eigen::Matrix<double,7,1> scriptFHere = scriptF;
+    Eigen::MatrixXd scriptYHere = scriptY;
+    m.unlock();
+    
+    int numData = scriptYstack.rows()/7;
+    
+    // Current stack
+    //std::vector<Eigen::MatrixXd> YtY;
+    //Eigen::MatrixXd sumYtY = Eigen::MatrixXd::Zero(scriptYstack.at(0).cols(),scriptYstack.at(0).cols());
+    //Eigen::MatrixXd sumYtY = Eigen::MatrixXd::Zero(scriptYstack.cols(),scriptYstack.cols());
+    //for (int i = 0; i < scriptYstack.size(); i++)
+    //{
+        //YtY.push_back(scriptYstack.at(i).transpose()*scriptYstack.at(i));
+        //sumYtY += YtY.at(i);
+    //}
+    Eigen::MatrixXd sumYtY = scriptYstack.transpose()*scriptYstack;
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver1(sumYtY,Eigen::EigenvaluesOnly);
+    double currEig = eigSolver1.eigenvalues().minCoeff();
+    std::cout << "currEig: " << currEig << std::endl;
+    
+    // New stack
+    sumYtY += scriptYHere.transpose()*scriptYHere;
+    //Eigen::VectorXd newEigVals = Eigen::VectorXd::Zero(scriptYstack.size());
+    //for (int i = 0; i < scriptYstack.size(); i++)
+    //{
+        //Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver2(sumYtY-YtY.at(i),Eigen::EigenvaluesOnly);
+        //newEigVals(i) = eigSolver2.eigenvalues().minCoeff();
+    //}
+    Eigen::VectorXd newEigVals = Eigen::VectorXd::Zero(numData);
+    for (int i = 0; i < numData; i++)
+    {
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver2(sumYtY-scriptYstack.middleRows(7*i,7).transpose()*scriptYstack.middleRows(7*i,7),Eigen::EigenvaluesOnly);
+        newEigVals(i) = eigSolver2.eigenvalues().minCoeff();
+    }
+    
+    // Replace with new data
+    int maxInd;
+    //if (newEigVals.maxCoeff(&maxInd) > currEig)
+    //{
+        //std::cout << "New data at index " << maxInd << std::endl;
+        //m.lock();
+        //etaStack.at(maxInd) = scriptEtaHere;
+        //scriptFstack.at(maxInd) = scriptFHere;
+        //scriptYstack.at(maxInd) = scriptYHere;
+        //m.unlock();
+    //}
+    if (newEigVals.maxCoeff(&maxInd) > currEig)
+    {
+        std::cout << "New data at index " << maxInd << std::endl;
+        
+        Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
+        Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
+        
+        m.lock();
+        etaStack.middleRows(7*maxInd,7) = scriptEtaHere;
+        scriptFstack.middleRows(7*maxInd,7) = scriptFHere;
+        scriptYstack.middleRows(7*maxInd,7) = scriptYHere;
+        term1 = tempTerm1;
+        term2 = tempTerm2;
+        m.unlock();
+    }
+    stackUpdateDone = true;
 }
 
 int main(int argc, char** argv)
@@ -272,7 +362,7 @@ int main(int argc, char** argv)
     double k2 = 0.1;
     double kCL = 1;
     double intWindow = 1;
-    int CLstackSize = 200;
+    int CLstackSize = 800;
     int stackFill = 0;
     double visibilityTimeout = 0.2;
     
@@ -283,26 +373,14 @@ int main(int argc, char** argv)
     nhp.param<double>("b", b, 1.0);
     nhp.param<double>("x0", x0, 1.0);
     nhp.param<double>("y0", y0, 1.0);
-    nhp.param<int>("numKernalWidth", numKernalWidth, 4);
-    nhp.param<int>("numKernalHeight", numKernalHeight, 4);
+    nhp.param<int>("numKernalWidth", numKernalWidth, 9);
+    nhp.param<int>("numKernalHeight", numKernalHeight, 9);
     mapWidth = 2*a;
     mapHeight = 2*b;
-    std::cout << "a: " << a << std::endl;
-    std::cout << "b: " << b << std::endl;
-    std::cout << "x0: " << x0 << std::endl;
-    std::cout << "y0: " << y0 << std::endl;
-    std::cout << "mapWidth: " << mapWidth << std::endl;
-    std::cout << "mapHeight: " << mapHeight << std::endl;
-    std::cout << "numKernalWidth: " << numKernalWidth << std::endl;
-    std::cout << "numKernalHeight: " << numKernalHeight << std::endl;
     int numKernal = numKernalWidth*numKernalHeight; // N
     Eigen::Matrix2d cov = (0.3*Eigen::Matrix2d::Identity()).inverse();
-    //Eigen::VectorXd muXvec = linspace(x0-mapWidth,x0+mapWidth,numKernalWidth);
-    //Eigen::VectorXd muYvec = linspace(y0-mapHeight,y0+mapHeight,numKernalHeight);
     Eigen::VectorXd muXvec = Eigen::VectorXd::LinSpaced(numKernalWidth,x0-mapWidth,x0+mapWidth);
     Eigen::VectorXd muYvec = Eigen::VectorXd::LinSpaced(numKernalHeight,y0-mapHeight,y0+mapHeight);
-    //Eigen::MatrixXd muXmat, muYmat;
-    //meshgrid(muXvec,muYvec,muXmat,muYmat);
     Eigen::MatrixXd muXmat = muXvec.transpose().replicate(muYvec.rows(),1);
     Eigen::MatrixXd muYmat = muYvec.replicate(1,muXvec.rows());
     muXvec = Eigen::Map<Eigen::VectorXd>(muXmat.data(),muXmat.cols()*muXmat.rows()); // mat to vec
@@ -310,17 +388,21 @@ int main(int argc, char** argv)
     Eigen::MatrixXd mu(2,muXvec.rows());
     mu << muXvec.transpose(), muYvec.transpose();
     mu.transposeInPlace(); // Nx2
-    std::cout << "mu: " << mu.rows() << " " << mu.cols() << std::endl << mu << std::endl;
-    //Eigen::MatrixXd (*sigma)(const Eigen::Matrix<double,7,Eigen::Dynamic>&, const Eigen::Vector3d&, const Eigen::Quaterniond&);
-    //sigma = [](const Eigen::Matrix<double,7,Eigen::Dynamic>& eta, const Eigen::Vector3d& xCam, const Eigen::Quaterniond& qCam) {return sigmaGen(eta,xCam,qCam,
     
     // Initialize integral concurrent learning history stacks
-    std::vector< Eigen::Matrix<double,7,1> > etaStack(CLstackSize,Eigen::Matrix<double,7,1>::Zero());
-    std::vector< Eigen::Matrix<double,7,1> > scriptFstack(CLstackSize,Eigen::Matrix<double,7,1>::Zero());
-    std::vector< Eigen::Matrix<double,7,Eigen::Dynamic> > scriptYstack(CLstackSize,Eigen::Matrix<double,7,Eigen::Dynamic>::Zero(7,6*numKernal));
+    //std::vector< Eigen::Matrix<double,7,1> > etaStack;
+    //std::vector< Eigen::Matrix<double,7,1> > scriptFstack;
+    //std::vector< Eigen::Matrix<double,7,Eigen::Dynamic> > scriptYstack;
+    Eigen::VectorXd etaStack = Eigen::VectorXd::Zero(7*CLstackSize);
+    Eigen::VectorXd scriptFstack = Eigen::VectorXd::Zero(7*CLstackSize);
+    Eigen::MatrixXd scriptYstack = Eigen::MatrixXd::Zero(7*CLstackSize,6*numKernal);
+    int fillAmount = 0;
+    Eigen::Matrix<double,7,1> scriptEta = Eigen::Matrix<double,7,1>::Zero();
+    Eigen::Matrix<double,7,1> scriptF = Eigen::Matrix<double,7,1>::Zero();
+    Eigen::MatrixXd scriptY = Eigen::MatrixXd::Zero(7,6*numKernal);
     Eigen::MatrixXd Gamma = Eigen::MatrixXd::Identity(6*numKernal,6*numKernal);
     
-    //// Subscribers
+    // Subscribers
     DataHandler callbacks(nh, visibilityTimeout, intWindow, mu, cov);
     ros::Subscriber camVelSub = nh.subscribe("image/body_vel",1,&DataHandler::camVelCB,&callbacks);
     ros::Subscriber targetVelSub = nh.subscribe("ugv0/body_vel",1,&DataHandler::targetVelCB,&callbacks);
@@ -336,30 +418,13 @@ int main(int argc, char** argv)
     ros::ServiceClient client = nh.serviceClient<switch_vis_exp::MapVel>("/get_velocity");
     Eigen::Vector3d xCam(0,0,0);
     Eigen::Quaterniond qCam(1,0,0,0);
-    int numPts = 16; // M
+    int numPts = 1600; // M
     Eigen::Matrix<double, 7, Eigen::Dynamic> eta(7,numPts); // 7xM
-    ROS_INFO("here1");
-    //eta << (mapWidth*Eigen::VectorXd::Random(numPts).array()-x0).transpose(),
-           //(mapHeight*Eigen::VectorXd::Random(numPts).array()-y0).transpose(),
-           //Eigen::Matrix<double, 4, Eigen::Dynamic>::Zero(4,numPts),
-           //Eigen::Matrix<double, 1, Eigen::Dynamic>::Ones(1,numPts);
-    
-    
-    Eigen::VectorXd etaXvec = Eigen::VectorXd::LinSpaced(4,x0-mapWidth,x0+mapWidth);
-    Eigen::VectorXd etaYvec = Eigen::VectorXd::LinSpaced(4,y0-mapHeight,y0+mapHeight);
-    //Eigen::MatrixXd muXmat, muYmat;
-    //meshgrid(muXvec,muYvec,muXmat,muYmat);
-    Eigen::MatrixXd etaXmat = etaXvec.transpose().replicate(etaYvec.rows(),1);
-    Eigen::MatrixXd etaYmat = etaYvec.replicate(1,etaXvec.rows());
-    etaXvec = Eigen::Map<Eigen::VectorXd>(etaXmat.data(),etaXmat.cols()*etaXmat.rows()); // mat to vec
-    etaYvec = Eigen::Map<Eigen::VectorXd>(etaYmat.data(),etaYmat.cols()*etaYmat.rows());
-    eta << etaXvec.transpose(), etaYvec.transpose(), Eigen::Matrix<double, 4, Eigen::Dynamic>::Zero(4,numPts), Eigen::Matrix<double, 1, Eigen::Dynamic>::Ones(1,numPts);
-    
-    
-    std::cout << "eta:" << std::endl << eta.transpose() << std::endl;
-    ROS_INFO("here2");
+    eta << (mapWidth*Eigen::VectorXd::Random(numPts).array()+x0).transpose(),
+           (mapHeight*Eigen::VectorXd::Random(numPts).array()+y0).transpose(),
+           Eigen::Matrix<double, 4, Eigen::Dynamic>::Zero(4,numPts),
+           Eigen::Matrix<double, 1, Eigen::Dynamic>::Ones(1,numPts);
     Eigen::MatrixXd Y = sigmaGen(eta, xCam, qCam, mu, cov);
-    ROS_INFO("here2b");
     switch_vis_exp::MapVel srv;
     for (int i = 0; i < eta.cols(); i++)
     {
@@ -373,11 +438,9 @@ int main(int argc, char** argv)
         poseMsg.orientation.w = eta(6,i);
         srv.request.pose.push_back(poseMsg);
     }
-    ROS_INFO("here3");
     while (!client.call(srv)) {}
     Eigen::MatrixXd bMat(eta.cols(),7);
     Eigen::Matrix3d Q = qCam.inverse().toRotationMatrix();
-    ROS_INFO("here4");
     for (int i = 0; i < eta.cols(); i++)
     {
         Eigen::Quaterniond q(eta(6,i),eta(3,i),eta(4,i),eta(5,i));
@@ -386,22 +449,23 @@ int main(int argc, char** argv)
         Eigen::Vector3d wTGt = qTG.inverse()*Eigen::Vector3d(srv.response.twist.at(i).angular.x,srv.response.twist.at(i).angular.y,srv.response.twist.at(i).angular.z);
         bMat.block<1,7>(i,0) << (Q*vTg).transpose(), (0.5*diffMat(q)*wTGt).transpose();
     }
-    ROS_INFO("here5");
-    //std::cout << "bMat:" << std::endl << bMat << std::endl;
     bMat.transposeInPlace();
     Eigen::VectorXd bVec(Eigen::Map<Eigen::VectorXd>(bMat.data(),bMat.rows()*bMat.cols()));
-    ROS_INFO("here6");
-    //std::cout << "bVec:" << bVec.rows() << " " << bVec.cols() << std::endl << bVec << std::endl;
-    std::cout << "Y:" << std::endl;
-    for (int j = 0; j < numPts; j++)
-    {
-        std::cout << j << std::endl;
-        std::cout << Y.middleRows(j*7,7).transpose() << std::endl;
-    }
     //Eigen::VectorXd thetaIdeal = Y.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(bVec);
     Eigen::VectorXd thetaIdeal = Y.colPivHouseholderQr().solve(bVec);
-    ROS_INFO("here7");
-    std::cout << "thetaIdeal:" << std::endl << thetaIdeal << std::endl;
+    
+    //Prefill stack
+    int prefillNum = 800;
+    fillAmount = prefillNum;
+    etaStack.head(prefillNum) = bVec.head(prefillNum);
+    scriptFstack.head(prefillNum) = Eigen::VectorXd::Zero(prefillNum);
+    scriptYstack.topRows(prefillNum) = Y.topRows(prefillNum);
+    //for (int i = 0; i < 800; i++)
+    //{
+        //etaStack.push_back(bMat.col(i));
+        //scriptFstack.push_back(Eigen::Matrix<double,7,1>::Zero());
+        //scriptYstack.push_back(Y.middleRows(7*i,7));
+    //}
     
     // Wait for initial data
     while(!callbacks.estimatorOn) {
@@ -409,22 +473,18 @@ int main(int argc, char** argv)
         ros::Duration(0.2).sleep();
     }
     
-    ROS_INFO("here8");
-    
-    return 0;
-    
     // Main loop
+    std::mutex m;
+    std::atomic<bool> stackUpdateDone(true);
+    std::thread stackThread;
     double lastTime = ros::Time::now().toSec();
     Eigen::Matrix<double,7,1> etaHat = Eigen::Matrix<double,7,1>::Zero();
     Eigen::Matrix<double,Eigen::Dynamic,1> thetaHat = Eigen::Matrix<double,Eigen::Dynamic,1>::Zero(6*numKernal);
-    ros::Rate r(300);
+    Eigen::MatrixXd term1 = scriptYstack.transpose()*(etaStack - scriptFstack);
+    Eigen::MatrixXd term2 = -1*scriptYstack.transpose()*scriptYstack;
+    ros::Rate r(100);
     while (ros::ok())
     {
-        // Time
-        double timeNow = ros::Time::now().toSec();
-        double delT = timeNow - lastTime;
-        lastTime = timeNow;
-        
         // Get latest data
         ros::spinOnce();
         Eigen::Matrix<double,7,1> eta = callbacks.eta;
@@ -435,29 +495,77 @@ int main(int argc, char** argv)
         Eigen::Vector3d wGCc = callbacks.wGCc;
         Eigen::Vector3d xCam = callbacks.xCam;
         Eigen::Quaterniond qCam = callbacks.qCam;
-        Eigen::Matrix<double,7,1> scriptEta = callbacks.scriptEta;
-        Eigen::Matrix<double,7,1> scriptF = callbacks.scriptF;
-        Eigen::MatrixXd scriptY = callbacks.scriptY;
+        m.lock();
+        scriptEta = callbacks.scriptEta;
+        scriptF = callbacks.scriptF;
+        scriptY = callbacks.scriptY;
+        m.unlock();
         Eigen::Vector3d vTt = callbacks.vTt; //DEBUG
         Eigen::Vector3d wGTt = callbacks.wGTt; //DEBUG
         Eigen::Matrix<double,7,1> phi; //DEBUG
         phi << q*vTt, 0.5*diffMat(q)*wGTt; //DEBUG
+        
+        // Sum history stack
+        m.lock();
+        Eigen::MatrixXd sum = term1 + term2*thetaHat;
+        m.unlock();
+        //Eigen::MatrixXd sum = Eigen::MatrixXd::Zero(6*numKernal,6*numKernal);
+        //for (int i = 0; i < scriptYstack.size(); i++)
+        //{
+            //sum += scriptYstack.at(i).transpose()*(etaStack.at(i) - scriptFstack.at(i) - scriptYstack.at(i)*thetaHat);
+        //}
         
         // Estimation
         Eigen::Matrix<double,7,1> etaHatDot;
         Eigen::Matrix<double,Eigen::Dynamic,1> thetaHatDot;
         if (callbacks.estimatorOn) // estimator
         {
-            etaHatDot = sigmaGen(eta,xCam,qCam,mu,cov)*thetaIdeal + fFunc(eta,vCc,wGCc) + k1*etaTilde + k2*signum(etaTilde);
+            etaHatDot = sigmaGen(eta,xCam,qCam,mu,cov)*thetaHat + fFunc(eta,vCc,wGCc) + k1*etaTilde + k2*signum(etaTilde);
             //etaHatDot = phi + fFunc(eta,vCc,wGCc) + k1*etaTilde + k2*signum(etaTilde);
+            
+            thetaHatDot = Gamma*sigmaGen(eta,xCam,qCam,mu,cov).transpose()*etaTilde + kCL*Gamma*sum;
+            
+            // Update history stack
+            //if (scriptYstack.size() < CLstackSize) // initially, always add data to stack
+            //{
+                //etaStack.push_back(scriptEta);
+                //scriptFstack.push_back(scriptF);
+                //scriptYstack.push_back(scriptY);
+            //}
+            if (fillAmount < CLstackSize)
+            {
+                etaStack.middleRows(7*fillAmount,7) = scriptEta;
+                scriptFstack.middleRows(7*fillAmount,7) = scriptF;
+                scriptYstack.middleRows(7*fillAmount,7) = scriptY;
+            }
+            else // replace data if it increases minimum eigenvalue
+            {
+                if (stackUpdateDone)
+                {
+                    if (stackThread.joinable())
+                    {
+                        stackThread.join();
+                    }
+                    stackUpdateDone = false;
+                    stackThread = std::thread(updateStack,std::ref(stackUpdateDone),std::ref(m),std::ref(scriptEta),std::ref(scriptF),std::ref(scriptY),std::ref(etaStack),std::ref(scriptFstack),std::ref(scriptYstack),std::ref(term1),std::ref(term2));
+                }
+            }
         }
         else // predictor
         {
-            etaHatDot = sigmaGen(etaHat,xCam,qCam,mu,cov)*thetaIdeal + fFunc(etaHat,vCc,wGCc);
+            etaHatDot = sigmaGen(etaHat,xCam,qCam,mu,cov)*thetaHat + fFunc(etaHat,vCc,wGCc);
             //etaHatDot = phi + fFunc(etaHat,vCc,wGCc);
+            
+            thetaHatDot = kCL*Gamma*sum;
         }
         
+        // Time
+        double timeNow = ros::Time::now().toSec();
+        double delT = timeNow - lastTime;
+        lastTime = timeNow;
+        
         etaHat += etaHatDot*delT;
+        thetaHat += thetaHatDot*delT;
         
         // Publish
         tf::Transform tfT2C(tf::Quaternion(etaHat(3),etaHat(4),etaHat(5),etaHat(6)),tf::Vector3(etaHat(0),etaHat(1),etaHat(2)));
