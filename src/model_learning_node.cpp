@@ -8,9 +8,11 @@
 #include <geometry_msgs/TwistStamped.h>
 
 #include <Eigen/Dense>
+#include <Eigen/Geometry>
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <random>
 
 template <typename T>
 T trapz(std::deque<double>, std::deque<T>);
@@ -153,7 +155,7 @@ public:
         }
         
         // Integrate
-        scriptEta = trapz(tBuff,etaBuff);
+        scriptEta = etaBuff.back() - etaBuff.front();
         scriptF = trapz(tBuff,fBuff);
         scriptY = trapz(tBuff,sigmaBuff);
         
@@ -306,46 +308,70 @@ void updateStack(std::atomic<bool>& stackUpdateDone, std::mutex& m, const Eigen:
     double currEig = eigSolver1.eigenvalues().minCoeff();
     std::cout << "currEig: " << currEig << std::endl;
     
-    // New stack
-    sumYtY += scriptYHere.transpose()*scriptYHere;
-    //Eigen::VectorXd newEigVals = Eigen::VectorXd::Zero(scriptYstack.size());
-    //for (int i = 0; i < scriptYstack.size(); i++)
-    //{
-        //Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver2(sumYtY-YtY.at(i),Eigen::EigenvaluesOnly);
-        //newEigVals(i) = eigSolver2.eigenvalues().minCoeff();
-    //}
-    Eigen::VectorXd newEigVals = Eigen::VectorXd::Zero(numData);
-    for (int i = 0; i < numData; i++)
+    if (currEig < 1e-10)
     {
-        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver2(sumYtY-scriptYstack.middleRows(7*i,7).transpose()*scriptYstack.middleRows(7*i,7),Eigen::EigenvaluesOnly);
-        newEigVals(i) = eigSolver2.eigenvalues().minCoeff();
-    }
-    
-    // Replace with new data
-    int maxInd;
-    //if (newEigVals.maxCoeff(&maxInd) > currEig)
-    //{
-        //std::cout << "New data at index " << maxInd << std::endl;
-        //m.lock();
-        //etaStack.at(maxInd) = scriptEtaHere;
-        //scriptFstack.at(maxInd) = scriptFHere;
-        //scriptYstack.at(maxInd) = scriptYHere;
-        //m.unlock();
-    //}
-    if (newEigVals.maxCoeff(&maxInd) > currEig)
-    {
-        std::cout << "New data at index " << maxInd << std::endl;
+        std::default_random_engine generator(std::rand());
+        std::uniform_int_distribution<int> distribution(0,numData-1);
+        int maxInd = distribution(generator);
+        
+        std::cout << "New data at random index " << maxInd << std::endl;
+        
+        etaStack.middleRows(7*maxInd,7) = scriptEtaHere;
+        scriptFstack.middleRows(7*maxInd,7) = scriptFHere;
+        scriptYstack.middleRows(7*maxInd,7) = scriptYHere;
         
         Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
         Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
         
         m.lock();
-        etaStack.middleRows(7*maxInd,7) = scriptEtaHere;
-        scriptFstack.middleRows(7*maxInd,7) = scriptFHere;
-        scriptYstack.middleRows(7*maxInd,7) = scriptYHere;
         term1 = tempTerm1;
         term2 = tempTerm2;
         m.unlock();
+    }
+    else
+    {
+        // New stack
+        sumYtY += scriptYHere.transpose()*scriptYHere;
+        //Eigen::VectorXd newEigVals = Eigen::VectorXd::Zero(scriptYstack.size());
+        //for (int i = 0; i < scriptYstack.size(); i++)
+        //{
+            //Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver2(sumYtY-YtY.at(i),Eigen::EigenvaluesOnly);
+            //newEigVals(i) = eigSolver2.eigenvalues().minCoeff();
+        //}
+        Eigen::VectorXd newEigVals = Eigen::VectorXd::Zero(numData);
+        for (int i = 0; i < numData; i++)
+        {
+            Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver2(sumYtY-scriptYstack.middleRows(7*i,7).transpose()*scriptYstack.middleRows(7*i,7),Eigen::EigenvaluesOnly);
+            newEigVals(i) = eigSolver2.eigenvalues().minCoeff();
+        }
+        
+        // Replace with new data
+        int maxInd;
+        //if (newEigVals.maxCoeff(&maxInd) > currEig)
+        //{
+            //std::cout << "New data at index " << maxInd << std::endl;
+            //m.lock();
+            //etaStack.at(maxInd) = scriptEtaHere;
+            //scriptFstack.at(maxInd) = scriptFHere;
+            //scriptYstack.at(maxInd) = scriptYHere;
+            //m.unlock();
+        //}
+        if (newEigVals.maxCoeff(&maxInd) > currEig)
+        {
+            std::cout << "New data at index " << maxInd << std::endl;
+            
+            etaStack.middleRows(7*maxInd,7) = scriptEtaHere;
+            scriptFstack.middleRows(7*maxInd,7) = scriptFHere;
+            scriptYstack.middleRows(7*maxInd,7) = scriptYHere;
+            
+            Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
+            Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
+            
+            m.lock();
+            term1 = tempTerm1;
+            term2 = tempTerm2;
+            m.unlock();
+        }
     }
     stackUpdateDone = true;
 }
@@ -361,10 +387,10 @@ int main(int argc, char** argv)
     double k1 = 3;
     double k2 = 0.1;
     double kCL = 1;
-    double intWindow = 1;
-    int CLstackSize = 800;
+    double intWindow = 0.1;
+    int CLstackSize = 600;
     int stackFill = 0;
-    double visibilityTimeout = 0.2;
+    double visibilityTimeout = 0.02;
     
     // Initialize Neural Network
     double a, b, x0, y0, mapWidth, mapHeight;
@@ -455,7 +481,7 @@ int main(int argc, char** argv)
     Eigen::VectorXd thetaIdeal = Y.colPivHouseholderQr().solve(bVec);
     
     //Prefill stack
-    int prefillNum = 800;
+    int prefillNum = 0;
     fillAmount = prefillNum;
     etaStack.head(prefillNum) = bVec.head(prefillNum);
     scriptFstack.head(prefillNum) = Eigen::VectorXd::Zero(prefillNum);
@@ -537,6 +563,7 @@ int main(int argc, char** argv)
                 etaStack.middleRows(7*fillAmount,7) = scriptEta;
                 scriptFstack.middleRows(7*fillAmount,7) = scriptF;
                 scriptYstack.middleRows(7*fillAmount,7) = scriptY;
+                fillAmount++;
             }
             else // replace data if it increases minimum eigenvalue
             {

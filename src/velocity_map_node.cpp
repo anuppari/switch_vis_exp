@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <switch_vis_exp/MapVel.h>
 #include <geometry_msgs/Twist.h>
+#include <tf/transform_datatypes.h>
 
 class velocity_map
 {
@@ -15,6 +16,7 @@ class velocity_map
     double k1;      // overall velocity gain
     double k2;      // weighting between getting back to track and moving in direction of track
     int n;          // sharpness and squareness of track
+    bool doRotation;
     
 public:
     velocity_map()
@@ -28,6 +30,7 @@ public:
         nhp.param<double>("k1",k1,0.5);
         nhp.param<double>("k2",k2,0.1);
         nhp.param<int>("n",n,4);
+        nhp.param<bool>("doRotation",doRotation,false);
         
         // Start service
         service = nh.advertiseService("get_velocity", &velocity_map::get_velocity,this);
@@ -60,12 +63,30 @@ public:
             
             // response
             geometry_msgs::Twist twistMsg;
-            twistMsg.linear.x = u;
-            twistMsg.linear.y = v;
-            twistMsg.linear.z = 0;
-            twistMsg.angular.x = 0;
-            twistMsg.angular.y = 0;
-            twistMsg.angular.z = 0;
+            if (doRotation)
+            {
+                tf::Vector3 vel(u,v,0);
+                tf::Quaternion quat(req.pose.at(i).orientation.x,req.pose.at(i).orientation.y,req.pose.at(i).orientation.z,req.pose.at(i).orientation.w);
+                tf::Vector3 xAxis = tf::Transform(quat,tf::Vector3(0,0,0))*tf::Vector3(1,0,0);
+                tf::Vector3 outLinVel = std::abs(xAxis.dot(vel.normalized()))*vel;
+                tf::Vector3 outAngVel = xAxis.cross(vel.normalized());
+                
+                twistMsg.linear.x = outLinVel.getX();
+                twistMsg.linear.y = outLinVel.getY();
+                twistMsg.linear.z = outLinVel.getZ();
+                twistMsg.angular.x = outAngVel.getX();
+                twistMsg.angular.y = outAngVel.getY();
+                twistMsg.angular.z = outAngVel.getZ();
+            }
+            else
+            {
+                twistMsg.linear.x = u;
+                twistMsg.linear.y = v;
+                twistMsg.linear.z = 0;
+                twistMsg.angular.x = 0;
+                twistMsg.angular.y = 0;
+                twistMsg.angular.z = 0;
+            }
             resp.twist.push_back(twistMsg);
         }
         

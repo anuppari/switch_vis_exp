@@ -24,7 +24,7 @@ intRate = 200 # [hz] integration rate
 velRate = 200 # [hz] velocity data publish rate
 frameRate = 60 # [hz] marker publish rate
 onDuration = np.array([3,5])
-offDuration = np.array([6,10])
+offDuration = np.array([1,4])
 lock = threading.Lock()
 
 def sim():
@@ -40,7 +40,7 @@ def sim():
     targetVelPub = rospy.Publisher("ugv0/body_vel",TwistStamped,queue_size=10)
     camVelPub = rospy.Publisher("image/body_vel",TwistStamped,queue_size=10)
     cameraName = rospy.get_param(rospy.get_name()+"/camera","camera")
-    camInfoPub = rospy.Publisher(cameraName+"/camera_info",CameraInfo,queue_size=1)
+    #camInfoPub = rospy.Publisher(cameraName+"/camera_info",CameraInfo,queue_size=1)
     joySub = rospy.Subscriber("joy", Joy, joyCB, queue_size=1)
     br = tf.TransformBroadcaster()
     tfl = tf.TransformListener()
@@ -50,11 +50,11 @@ def sim():
     camInfoMsg.D = distCoeffs.tolist()
     camInfoMsg.K = camMat.reshape((-1)).tolist()
     
-    # Wait for node to get cam info
-    while (camVelPub.get_num_connections() == 0) and (not rospy.is_shutdown()):
-        # publish camera parameters
-        camInfoPub.publish(camInfoMsg)
-        rospy.sleep(0.5)
+    ## Wait for node to get cam info
+    #while (camVelPub.get_num_connections() == 0) and (not rospy.is_shutdown()):
+        ## publish camera parameters
+        #camInfoPub.publish(camInfoMsg)
+        #rospy.sleep(0.5)
     
     # Target velocity service handle
     rospy.wait_for_service('get_velocity')
@@ -63,8 +63,8 @@ def sim():
     # Publishers
     rospy.Timer(rospy.Duration(1.0/velRate),velPubCB)
     imageTimer = rospy.Timer(rospy.Duration(1.0/frameRate),imagePubCB)
-    rospy.Timer(rospy.Duration(0.5),camInfoPubCB)
-    switchTimer = rospy.Timer(rospy.Duration(11.0),switchCB,oneshot=True)
+    #rospy.Timer(rospy.Duration(0.5),camInfoPubCB)
+    switchTimer = rospy.Timer(rospy.Duration(60.0),switchCB,oneshot=True)
     
     # Initial conditions
     startTime = rospy.get_time()
@@ -72,7 +72,7 @@ def sim():
     camOrient = np.array([-1*np.sqrt(2)/2,0,0,np.sqrt(2)/2])
     #camPos = np.array([0,0,0])
     #camOrient = np.array([0,0,0,1])
-    targetPos = np.array([0,1,0])
+    targetPos = np.array([1,.1,0])
     targetOrient = np.array([0,0,0,1])
     pose = np.concatenate((camPos,camOrient,targetPos,targetOrient))
     
@@ -235,6 +235,7 @@ def velocities(t):
         lock.release()
     twistMsg = resp.twist[0]
     vp = rotateVec(np.array([twistMsg.linear.x,twistMsg.linear.y,twistMsg.linear.z]),qInv(targetOrient))
+    vp[1:] = 0
     wp = rotateVec(np.array([twistMsg.angular.x,twistMsg.angular.y,twistMsg.angular.z]),qInv(targetOrient))
     vc = np.array([0,0,0])
     wc = np.array([0,0,0])
