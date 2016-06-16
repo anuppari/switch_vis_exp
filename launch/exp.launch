@@ -6,7 +6,7 @@
     <arg name="drive" value="$(arg useVelocityMap)" />
   </include>
   
-  <!-- Launch tag tracker -->
+  <!-- Launch Estimators -->
   <include file="$(find switch_vis_exp)/launch/estimators.launch" >
     <arg name="estimator" value="true" />
     <arg name="ekf" value="true" />

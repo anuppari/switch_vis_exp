@@ -36,6 +36,7 @@ class DataHandler
     Eigen::Matrix2d cov;
     ros::Timer watchdogTimer;
     double intWindow;
+    std::string markerID;
     
 public:
     Eigen::Vector3d vCc;
@@ -55,7 +56,9 @@ public:
     
     DataHandler(ros::NodeHandle& nhIn, double visibilityTimeout, double intWindowIn, const Eigen::MatrixXd& muIn, const Eigen::Matrix2d& covIn)
     {
-        nh = nhIn;
+        //nh = nhIn;
+        ros::NodeHandle nhp("~");
+        nhp.param<std::string>("markerID",markerID,"100");
         
         vCc << 0,0,0;
         wGCc << 0,0,0;
@@ -106,6 +109,9 @@ public:
     
     void targetPoseCB(const geometry_msgs::PoseStampedConstPtr& pose)
     {
+        // Disregard erroneous tag tracks
+        if (markerID.compare(pose->header.frame_id) != 0) { return; }
+        
         // stop timer
         watchdogTimer.stop();
         if (!estimatorOn)
@@ -390,7 +396,7 @@ int main(int argc, char** argv)
     double intWindow = 0.1;
     int CLstackSize = 600;
     int stackFill = 0;
-    double visibilityTimeout = 0.02;
+    double visibilityTimeout = 0.03;
     
     // Initialize Neural Network
     double a, b, x0, y0, mapWidth, mapHeight;
@@ -432,7 +438,7 @@ int main(int argc, char** argv)
     DataHandler callbacks(nh, visibilityTimeout, intWindow, mu, cov);
     ros::Subscriber camVelSub = nh.subscribe("image/body_vel",1,&DataHandler::camVelCB,&callbacks);
     ros::Subscriber targetVelSub = nh.subscribe("ugv0/body_vel",1,&DataHandler::targetVelCB,&callbacks);
-    ros::Subscriber targetPoseSub = nh.subscribe("relPose",1,&DataHandler::targetPoseCB,&callbacks);
+    ros::Subscriber targetPoseSub = nh.subscribe("markers",1,&DataHandler::targetPoseCB,&callbacks);
     ros::Subscriber camPoseSub = nh.subscribe("image/pose",1,&DataHandler::camPoseCB,&callbacks);
     
     // DEBUG / SIM
@@ -440,58 +446,58 @@ int main(int argc, char** argv)
     ros::Duration(1.0).sleep();
     camInfoSub.shutdown();
     
-    // Generate pre-seed data
-    ros::ServiceClient client = nh.serviceClient<switch_vis_exp::MapVel>("/get_velocity");
-    Eigen::Vector3d xCam(0,0,0);
-    Eigen::Quaterniond qCam(1,0,0,0);
-    int numPts = 1600; // M
-    Eigen::Matrix<double, 7, Eigen::Dynamic> eta(7,numPts); // 7xM
-    eta << (mapWidth*Eigen::VectorXd::Random(numPts).array()+x0).transpose(),
-           (mapHeight*Eigen::VectorXd::Random(numPts).array()+y0).transpose(),
-           Eigen::Matrix<double, 4, Eigen::Dynamic>::Zero(4,numPts),
-           Eigen::Matrix<double, 1, Eigen::Dynamic>::Ones(1,numPts);
-    Eigen::MatrixXd Y = sigmaGen(eta, xCam, qCam, mu, cov);
-    switch_vis_exp::MapVel srv;
-    for (int i = 0; i < eta.cols(); i++)
-    {
-        geometry_msgs::Pose poseMsg;
-        poseMsg.position.x = eta(0,i);
-        poseMsg.position.y = eta(1,i);
-        poseMsg.position.z = eta(2,i);
-        poseMsg.orientation.x = eta(3,i);
-        poseMsg.orientation.y = eta(4,i);
-        poseMsg.orientation.z = eta(5,i);
-        poseMsg.orientation.w = eta(6,i);
-        srv.request.pose.push_back(poseMsg);
-    }
-    while (!client.call(srv)) {}
-    Eigen::MatrixXd bMat(eta.cols(),7);
-    Eigen::Matrix3d Q = qCam.inverse().toRotationMatrix();
-    for (int i = 0; i < eta.cols(); i++)
-    {
-        Eigen::Quaterniond q(eta(6,i),eta(3,i),eta(4,i),eta(5,i));
-        Eigen::Quaterniond qTG = qCam*q;
-        Eigen::Vector3d vTg(srv.response.twist.at(i).linear.x,srv.response.twist.at(i).linear.y,srv.response.twist.at(i).linear.z);
-        Eigen::Vector3d wTGt = qTG.inverse()*Eigen::Vector3d(srv.response.twist.at(i).angular.x,srv.response.twist.at(i).angular.y,srv.response.twist.at(i).angular.z);
-        bMat.block<1,7>(i,0) << (Q*vTg).transpose(), (0.5*diffMat(q)*wTGt).transpose();
-    }
-    bMat.transposeInPlace();
-    Eigen::VectorXd bVec(Eigen::Map<Eigen::VectorXd>(bMat.data(),bMat.rows()*bMat.cols()));
-    //Eigen::VectorXd thetaIdeal = Y.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(bVec);
-    Eigen::VectorXd thetaIdeal = Y.colPivHouseholderQr().solve(bVec);
-    
-    //Prefill stack
-    int prefillNum = 0;
-    fillAmount = prefillNum;
-    etaStack.head(prefillNum) = bVec.head(prefillNum);
-    scriptFstack.head(prefillNum) = Eigen::VectorXd::Zero(prefillNum);
-    scriptYstack.topRows(prefillNum) = Y.topRows(prefillNum);
-    //for (int i = 0; i < 800; i++)
+    //// Generate pre-seed data
+    //ros::ServiceClient client = nh.serviceClient<switch_vis_exp::MapVel>("/get_velocity");
+    //Eigen::Vector3d xCam(0,0,0);
+    //Eigen::Quaterniond qCam(1,0,0,0);
+    //int numPts = 1600; // M
+    //Eigen::Matrix<double, 7, Eigen::Dynamic> eta(7,numPts); // 7xM
+    //eta << (mapWidth*Eigen::VectorXd::Random(numPts).array()+x0).transpose(),
+           //(mapHeight*Eigen::VectorXd::Random(numPts).array()+y0).transpose(),
+           //Eigen::Matrix<double, 4, Eigen::Dynamic>::Zero(4,numPts),
+           //Eigen::Matrix<double, 1, Eigen::Dynamic>::Ones(1,numPts);
+    //Eigen::MatrixXd Y = sigmaGen(eta, xCam, qCam, mu, cov);
+    //switch_vis_exp::MapVel srv;
+    //for (int i = 0; i < eta.cols(); i++)
     //{
-        //etaStack.push_back(bMat.col(i));
-        //scriptFstack.push_back(Eigen::Matrix<double,7,1>::Zero());
-        //scriptYstack.push_back(Y.middleRows(7*i,7));
+        //geometry_msgs::Pose poseMsg;
+        //poseMsg.position.x = eta(0,i);
+        //poseMsg.position.y = eta(1,i);
+        //poseMsg.position.z = eta(2,i);
+        //poseMsg.orientation.x = eta(3,i);
+        //poseMsg.orientation.y = eta(4,i);
+        //poseMsg.orientation.z = eta(5,i);
+        //poseMsg.orientation.w = eta(6,i);
+        //srv.request.pose.push_back(poseMsg);
     //}
+    //while (!client.call(srv)) {}
+    //Eigen::MatrixXd bMat(eta.cols(),7);
+    //Eigen::Matrix3d Q = qCam.inverse().toRotationMatrix();
+    //for (int i = 0; i < eta.cols(); i++)
+    //{
+        //Eigen::Quaterniond q(eta(6,i),eta(3,i),eta(4,i),eta(5,i));
+        //Eigen::Quaterniond qTG = qCam*q;
+        //Eigen::Vector3d vTg(srv.response.twist.at(i).linear.x,srv.response.twist.at(i).linear.y,srv.response.twist.at(i).linear.z);
+        //Eigen::Vector3d wTGt = qTG.inverse()*Eigen::Vector3d(srv.response.twist.at(i).angular.x,srv.response.twist.at(i).angular.y,srv.response.twist.at(i).angular.z);
+        //bMat.block<1,7>(i,0) << (Q*vTg).transpose(), (0.5*diffMat(q)*wTGt).transpose();
+    //}
+    //bMat.transposeInPlace();
+    //Eigen::VectorXd bVec(Eigen::Map<Eigen::VectorXd>(bMat.data(),bMat.rows()*bMat.cols()));
+    ////Eigen::VectorXd thetaIdeal = Y.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(bVec);
+    //Eigen::VectorXd thetaIdeal = Y.colPivHouseholderQr().solve(bVec);
+    
+    ////Prefill stack
+    //int prefillNum = 0;
+    //fillAmount = prefillNum;
+    //etaStack.head(prefillNum) = bVec.head(prefillNum);
+    //scriptFstack.head(prefillNum) = Eigen::VectorXd::Zero(prefillNum);
+    //scriptYstack.topRows(prefillNum) = Y.topRows(prefillNum);
+    ////for (int i = 0; i < 800; i++)
+    ////{
+        ////etaStack.push_back(bMat.col(i));
+        ////scriptFstack.push_back(Eigen::Matrix<double,7,1>::Zero());
+        ////scriptYstack.push_back(Y.middleRows(7*i,7));
+    ////}
     
     // Wait for initial data
     while(!callbacks.estimatorOn) {

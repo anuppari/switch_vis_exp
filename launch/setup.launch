@@ -24,7 +24,7 @@
   
   <!-- Launch camera to image frame tf publisher. Transform between mocap rigid body of camera and actual image coordinate system -->
   <!-- <node pkg="tf" type="static_transform_publisher" name="image_broadcaster" args="-0.0868978 0.0104688 -0.0126028 -0.57167 -0.434797 0.441465 0.537815 camera image 100" /> -->
-  <node pkg="tf" type="static_transform_publisher" name="image_broadcaster" args="-0.0835731 -0.014743 -0.0124397 -0.509044 -0.510976 0.513705 0.464632 camera image 100" />
+  <node pkg="tf" type="static_transform_publisher" name="image_broadcaster" args="-0.0735883 0.0494459 0.0115187 -0.59711 -0.264079 0.332563 0.680528 camera image 100" />
   
   <!-- Launch world to image pose publisher (i.e. publish pose messages for the corresponding tf) -->
   <node pkg="robot_pose_publisher" type="robot_pose_publisher" name="robot_pose_publisher" output="screen" >
@@ -44,15 +44,15 @@
   <!-- Move turtlebot along track, xbox controller can override if joy enabled in turtlebot launch file -->
   <group if="$(arg drive)" >
     <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" >
-      <param name="a" value="1.1" /> <!-- track width -->
-      <param name="b" value="1.5" /> <!-- track height -->
-      <param name="x0" value="0.5" /> <!-- track center -->
-      <param name="y0" value="-0.3" /> <!-- track center -->
+      <param name="a" value="2.1" /> <!-- track width -->
+      <param name="b" value="2.0" /> <!-- track height -->
+      <param name="x0" value="0.0" /> <!-- track center -->
+      <param name="y0" value="0.0" /> <!-- track center -->
       <param name="k1" value="0.5" />
       <param name="k2" value="0.5" />
     </node>
     <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" ns="ugv0" output="screen" >
-      <param name="loopRate" value="100.0" />
+      <param name="loopRate" value="50.0" />
       <param name="kw1" value="15.0" />
       <param name="kw2" value="0.01" />
     </node>
