@@ -1,9 +1,15 @@
+<?xml version="1.0"?>
+
 <launch>
   <!-- Launch Parameters -->
   <arg name="drive" default="false" /> <!-- drive turtlebot in circles -->
   <arg name="cameraName" default="camera" /> <!-- camera topic -->
   <arg name="drawMarkers" default="true" /> <!-- show marker track from aruco -->
   <arg name="showViz" default="true" /> <!-- Launch rviz -->
+  <arg name="a" default="1.5" /> <!-- track width -->
+  <arg name="b" default="1.5" /> <!-- track height -->
+  <arg name="x0" default="-1.0" /> <!-- track center -->
+  <arg name="y0" default="0.0" /> <!-- track center -->
   
   <!-- Launch motion capture system listener -->
   <include file="$(find mocap_optitrack)/launch/mocap.launch" />
@@ -20,6 +26,8 @@
     <arg name="adaptiveROI" value="true" />
     <arg name="markerSize" value="0.2032" /> <!-- [meters] -->
     <arg name="image_frame_id" value="image" />
+    <arg name="republishCamInfo" value="true" />
+    <arg name="adaptiveROIfactor" value="0.4" />
   </include>
   
   <!-- Launch camera to image frame tf publisher. Transform between mocap rigid body of camera and actual image coordinate system -->
@@ -44,10 +52,10 @@
   <!-- Move turtlebot along track, xbox controller can override if joy enabled in turtlebot launch file -->
   <group if="$(arg drive)" >
     <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" >
-      <param name="a" value="2.1" /> <!-- track width -->
-      <param name="b" value="2.0" /> <!-- track height -->
-      <param name="x0" value="0.0" /> <!-- track center -->
-      <param name="y0" value="0.0" /> <!-- track center -->
+      <param name="a" value="$(arg a)" /> <!-- track width -->
+      <param name="b" value="$(arg b)" /> <!-- track height -->
+      <param name="x0" value="$(arg x0)" /> <!-- track center -->
+      <param name="y0" value="$(arg y0)" /> <!-- track center -->
       <param name="k1" value="0.5" />
       <param name="k2" value="0.5" />
     </node>

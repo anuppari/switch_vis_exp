@@ -1,16 +1,37 @@
+<?xml version="1.0"?>
+
 <launch>
-  <arg name="useVelocityMap" default="false" />
+  <arg name="useVelocityMap" default="true" />
+  <arg name="a" default="1.5" /> <!-- track width -->
+  <arg name="b" default="1.5" /> <!-- track height -->
+  <arg name="x0" default="-1.0" /> <!-- track center -->
+  <arg name="y0" default="0.0" /> <!-- track center -->
   
   <!-- Setup -->
   <include file="$(find switch_vis_exp)/launch/setup.launch" >
     <arg name="drive" value="$(arg useVelocityMap)" />
+    <arg name="a" value="$(arg a)" /> <!-- track width -->
+    <arg name="b" value="$(arg b)" /> <!-- track height -->
+    <arg name="x0" value="$(arg x0)" /> <!-- track center -->
+    <arg name="y0" value="$(arg y0)" /> <!-- track center -->
   </include>
   
   <!-- Launch Estimators -->
+  <include file="$(find switch_vis_exp)/launch/model_learning.launch" >
+    <arg name="a" value="$(arg a)" /> <!-- track width -->
+    <arg name="b" value="$(arg b)" /> <!-- track height -->
+    <arg name="x0" value="$(arg x0)" /> <!-- track center -->
+    <arg name="y0" value="$(arg y0)" /> <!-- track center -->
+    <arg name="sim" value="false" />
+    <arg name="artificialSwitching" value="true" />
+    <arg name="recordData" value="true" />
+  </include>
+<!--
   <include file="$(find switch_vis_exp)/launch/estimators.launch" >
     <arg name="estimator" value="true" />
     <arg name="ekf" value="true" />
     <arg name="recordData" value="false" />
     <arg name="useVelocityMap" value="$(arg useVelocityMap)" />
   </include>
+-->
 </launch>

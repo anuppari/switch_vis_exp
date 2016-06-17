@@ -1,33 +1,47 @@
 <?xml version="1.0"?>
 
 <launch>
-    <arg name="a" value="1.1" />
-    <arg name="b" value="1.5" />
-<!--
-    <arg name="x0" value="0.5" />
-    <arg name="y0" value="-0.3" />
--->
-    <arg name="x0" value="0.0" />
-    <arg name="y0" value="0.0" />
-    <node pkg="switch_vis_exp" type="sim.py" name="sim" output="screen"/>
-    <node pkg="switch_vis_exp" type="model_learning_node" name="estimator" output="screen">
+    <arg name="sim" default="true" />
+    <arg name="recordData" default="false" /> <!-- record to rosbag -->
+    <arg name="artificialSwitching" default="false" />
+    <arg name="a" default="1.5" />
+    <arg name="b" default="1.5" />
+    <arg name="x0" default="-1.0" />
+    <arg name="y0" default="0.0" />
+    
+    <node pkg="switch_vis_exp" type="model_learning_node" name="estimator" output="screen" >
+      <param name="artificialSwitching" value="$(arg artificialSwitching)" />
       <param name="a" value="$(arg a)" />
       <param name="b" value="$(arg b)" />
       <param name="x0" value="$(arg x0)" />
       <param name="y0" value="$(arg y0)" />
     </node>
     
-    <node pkg="rviz" type="rviz" name="rviz" />
+    <group if="$(arg sim)" >
+        <node pkg="switch_vis_exp" type="sim.py" name="sim" output="screen"/>
+        <node pkg="rviz" type="rviz" name="rviz" />
+        
+        <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" >
+          <param name="a" value="$(arg a)" /> <!-- track width -->
+          <param name="b" value="$(arg b)" /> <!-- track height -->
+          <param name="x0" value="$(arg x0)" /> <!-- track center -->
+          <param name="y0" value="$(arg y0)" /> <!-- track center -->
+          <param name="k1" value="0.5" />
+          <param name="k2" value="0.5" />
+          <param name="doRotation" value="true" />
+        </node>
+    </group>
     
-    <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" >
-      <param name="a" value="$(arg a)" /> <!-- track width -->
-      <param name="b" value="$(arg b)" /> <!-- track height -->
-      <param name="x0" value="$(arg x0)" /> <!-- track center -->
-      <param name="y0" value="$(arg y0)" /> <!-- track center -->
-      <param name="k1" value="0.5" />
-      <param name="k2" value="0.5" />
-      <param name="doRotation" value="true" />
+    <!-- Record data -->
+    <node if="$(arg recordData)" name="record_video" pkg="image_view" type="video_recorder" >
+        <remap from="image" to="markerImage" />
+        <remap from="camera_info" to="markerImage/camera_info" />
+        <param name="filename" value="/home/ncr/experiment_data/model_learning/video.avi" />
+        <param name="fps" value="30" />
+        <param name="max_depth_range" value="0.0" />
     </node>
+    <node if="$(arg recordData)" name="record_data" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/model_learning/random.bag /output /camera/camera_info /markers /ugv0/pose /ugv0/odom /ugv0/body_vel /image/pose /image/body_vel /tf" />
+
     
     <!-- joystick -->
 <!--
