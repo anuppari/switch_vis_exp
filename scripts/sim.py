@@ -9,7 +9,7 @@ import cv2
 from aruco_ros.msg import Center
 from geometry_msgs.msg import TwistStamped, PoseStamped, Pose
 from sensor_msgs.msg import CameraInfo, Joy
-from switch_vis_exp.srv import MapVel
+from switch_vis_exp.srv import MapVel, RoadMap
 
 qMult = tf.transformations.quaternion_multiply # quaternion multiplication function handle
 qInv = tf.transformations.quaternion_inverse # quaternion inverse function handle
@@ -25,21 +25,26 @@ velRate = 200 # [hz] velocity data publish rate
 frameRate = 60 # [hz] marker publish rate
 onDuration = np.array([3,5])
 offDuration = np.array([1,4])
+#onDuration = np.array([15,30])
+#offDuration = np.array([10,20])
 lock = threading.Lock()
+prevNode = -1
+nextNode = -1
 
 def sim():
-    global t, pose, camInfoMsg
+    global t, pose, camInfoMsg, nodeLocations
     global centerPub, targetVelPub, camVelPub, camInfoPub, br, tfl, posePub, getMapVel
-    global switchTimer, imageTimer, estimatorOn
+    global switchTimer, imageTimer, estimatorOn, streets
     
     rospy.init_node("sim")
     estimatorOn = True
     
     centerPub = rospy.Publisher("markerCenters",Center,queue_size=10)
-    posePub = rospy.Publisher("relPose",PoseStamped,queue_size=10)
+    posePub = rospy.Publisher("markers",PoseStamped,queue_size=10)
     targetVelPub = rospy.Publisher("ugv0/body_vel",TwistStamped,queue_size=10)
     camVelPub = rospy.Publisher("image/body_vel",TwistStamped,queue_size=10)
     cameraName = rospy.get_param(rospy.get_name()+"/camera","camera")
+    streets = rospy.get_param(rospy.get_name()+"/streets",False)
     #camInfoPub = rospy.Publisher(cameraName+"/camera_info",CameraInfo,queue_size=1)
     joySub = rospy.Subscriber("joy", Joy, joyCB, queue_size=1)
     br = tf.TransformBroadcaster()
@@ -60,11 +65,18 @@ def sim():
     rospy.wait_for_service('get_velocity')
     getMapVel = rospy.ServiceProxy('get_velocity', MapVel)
     
+    # Road map
+    if streets:
+        rospy.wait_for_service('get_map')
+        getRoadMap = rospy.ServiceProxy('get_map', RoadMap)
+        resp = getRoadMap()
+        nodeLocations = np.array([[pt.x,pt.y] for pt in resp.nodes])
+    
     # Publishers
-    rospy.Timer(rospy.Duration(1.0/velRate),velPubCB)
+    #rospy.Timer(rospy.Duration(1.0/velRate),velPubCB)
     imageTimer = rospy.Timer(rospy.Duration(1.0/frameRate),imagePubCB)
     #rospy.Timer(rospy.Duration(0.5),camInfoPubCB)
-    switchTimer = rospy.Timer(rospy.Duration(60.0),switchCB,oneshot=True)
+    switchTimer = rospy.Timer(rospy.Duration(500.0),switchCB,oneshot=True)
     
     # Initial conditions
     startTime = rospy.get_time()
@@ -72,7 +84,7 @@ def sim():
     camOrient = np.array([-1*np.sqrt(2)/2,0,0,np.sqrt(2)/2])
     #camPos = np.array([0,0,0])
     #camOrient = np.array([0,0,0,1])
-    targetPos = np.array([1,.1,0])
+    targetPos = np.array([0.2,.1,0])
     targetOrient = np.array([0,0,0,1])
     pose = np.concatenate((camPos,camOrient,targetPos,targetOrient))
     
@@ -104,9 +116,18 @@ def switchCB(event):
     global estimatorOn, switchTimer, imageTimer
     
     if estimatorOn:
-        imageTimer.shutdown()
-        switchTimer = rospy.Timer(rospy.Duration((offDuration[1]-offDuration[0])*np.random.rand(1)+offDuration[0]),switchCB,oneshot=True)
-        estimatorOn = False
+        if streets:
+            targetPos = pose[7:10]
+            if np.linalg.norm(nodeLocations - targetPos[0:2],axis=1).min() < 0.3: # don't switch near nodes
+                switchTimer = rospy.Timer(rospy.Duration(0.5),switchCB,oneshot=True)
+            else:
+                imageTimer.shutdown()
+                switchTimer = rospy.Timer(rospy.Duration((offDuration[1]-offDuration[0])*np.random.rand(1)+offDuration[0]),switchCB,oneshot=True)
+                estimatorOn = False
+        else:
+            imageTimer.shutdown()
+            switchTimer = rospy.Timer(rospy.Duration((offDuration[1]-offDuration[0])*np.random.rand(1)+offDuration[0]),switchCB,oneshot=True)
+            estimatorOn = False
     else:
         imageTimer = rospy.Timer(rospy.Duration(1.0/frameRate),imagePubCB)
         switchTimer = rospy.Timer(rospy.Duration((onDuration[1]-onDuration[0])*np.random.rand(1)+onDuration[0]),switchCB,oneshot=True)
@@ -211,7 +232,7 @@ def joyCB(joyData):
 
 
 def velocities(t):
-    global pose
+    global pose, prevNode, nextNode
     
     lenT = t.size
     
@@ -230,10 +251,13 @@ def velocities(t):
     poseMsg.orientation.w = targetOrient[3]
     lock.acquire()
     try:
-        resp = getMapVel([poseMsg])
+        resp = getMapVel(pose = [poseMsg], fromNode = [prevNode], toNode = [nextNode])
     finally:
         lock.release()
+    prevNode = resp.fromNode[0]
+    nextNode = resp.toNode[0]
     twistMsg = resp.twist[0]
+    #print twistMsg
     vp = rotateVec(np.array([twistMsg.linear.x,twistMsg.linear.y,twistMsg.linear.z]),qInv(targetOrient))
     vp[1:] = 0
     wp = rotateVec(np.array([twistMsg.angular.x,twistMsg.angular.y,twistMsg.angular.z]),qInv(targetOrient))

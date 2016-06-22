@@ -5,6 +5,7 @@
 #include <sensor_msgs/CameraInfo.h>
 #include <switch_vis_exp/Output.h>
 #include <switch_vis_exp/MapVel.h>
+#include <switch_vis_exp/RoadMap.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 
@@ -15,15 +16,137 @@
 #include <atomic>
 #include <random>
 
+#define PI 3.14159265358979323846264
+
+//template <typename T>
+//T trapz(std::deque<double>, std::deque<T>);
+//Eigen::MatrixXd sigmaGen(const Eigen::Matrix<double, 7, Eigen::Dynamic>&, const Eigen::Vector3d&, const Eigen::Quaterniond&, const Eigen::Matrix<double, Eigen::Dynamic, 2>&, const Eigen::Matrix2d&);
+//Eigen::Matrix<double, 7, 1> fFunc(const Eigen::Matrix<double, 7, 1>&, const Eigen::Vector3d&, const Eigen::Vector3d&);
+//Eigen::Matrix<double,4,3> diffMat(const Eigen::Quaterniond&);
+//template <typename Derived>
+//Eigen::MatrixXd signum(const Eigen::MatrixBase<Derived>&);
+//void updateStack(std::atomic<bool>&, std::mutex&, const Eigen::Matrix<double,7,1>&, const Eigen::Matrix<double,7,1>&, const Eigen::MatrixXd&, Eigen::VectorXd&, Eigen::VectorXd&, Eigen::MatrixXd&, Eigen::MatrixXd&, Eigen::MatrixXd&);
+//void genData(double, double, double, double, const Eigen::MatrixXd&, const Eigen::Matrix2d&, int&, Eigen::VectorXd&, Eigen::VectorXd&, Eigen::MatrixXd&);
+
+
+// Calculate differential matrix for relationship between quaternion derivative and angular velocity.
+// qDot = 1/2*B*omega 
+// See strapdown inertial book. If quaternion is orientation of frame 
+// B w.r.t N in the sense that nP = q*bP*q', omega is ang. vel of frame B w.r.t. N,
+// i.e. N_w_B, expressed in the B coordinate system
+// q = [x,y,z,w]
+Eigen::Matrix<double,4,3> diffMat(const Eigen::Quaterniond& q)
+{
+    Eigen::Matrix<double,4,3> B;
+    B << q.w(), -q.z(), q.y(), q.z(), q.w(), -q.x(), -q.y(), q.x(), q.w(), -q.x(), -q.y(), -q.z();
+    return B;
+}
+
+// CHANGE THIS TEMPLATE TO MATCH SIGNUM FUNCTION BELOW?
 template <typename T>
-T trapz(std::deque<double>, std::deque<T>);
-Eigen::MatrixXd sigmaGen(const Eigen::Matrix<double, 7, Eigen::Dynamic>&, const Eigen::Vector3d&, const Eigen::Quaterniond&, const Eigen::Matrix<double, Eigen::Dynamic, 2>&, const Eigen::Matrix2d&);
-Eigen::Matrix<double, 7, 1> fFunc(const Eigen::Matrix<double, 7, 1>&, const Eigen::Vector3d&, const Eigen::Vector3d&);
-Eigen::Matrix<double,4,3> diffMat(const Eigen::Quaterniond&);
-template <typename Derived>
-Eigen::MatrixXd signum(const Eigen::MatrixBase<Derived>&);
-void updateStack(std::atomic<bool>&, std::mutex&, const Eigen::Matrix<double,7,1>&, const Eigen::Matrix<double,7,1>&, const Eigen::MatrixXd&, Eigen::VectorXd&, Eigen::VectorXd&, Eigen::MatrixXd&, Eigen::MatrixXd&, Eigen::MatrixXd&);
-void genData(double, double, double, double, const Eigen::MatrixXd&, const Eigen::Matrix2d&, int&, Eigen::VectorXd&, Eigen::VectorXd&, Eigen::MatrixXd&);
+T trapz(std::deque<double> tBuff, std::deque<T> dataBuff)
+{
+    T out = T::Zero(dataBuff.at(0).rows(),dataBuff.at(0).cols());
+    for (int i = 1; i < tBuff.size(); i++)
+    {
+        out += 0.5*(tBuff.at(i)-tBuff.at(i-1))*(dataBuff.at(i) + dataBuff.at(i-1));
+    }
+    
+    return out;
+}
+
+Eigen::MatrixXd sigmaGen(bool streets, const Eigen::Matrix<double, 7, Eigen::Dynamic>& eta, const Eigen::Vector3d& xCam, const Eigen::Quaterniond& qCam, const Eigen::MatrixXd& mu, const Eigen::MatrixXd& cov)
+{
+    // eta: 7xM
+    // mu: Nxdim
+    // Y: 7*Mx6*N
+    
+    int dim = streets ? 3 : 2;
+    int M = eta.cols();
+    int N = mu.rows();
+    
+    Eigen::MatrixXd T = Eigen::MatrixXd::Zero(7,6);
+    Eigen::Matrix3d Q = qCam.inverse().toRotationMatrix();
+    T.block<3,3>(0,0) = Q;
+    Eigen::MatrixXd Y(7*M,6*N);
+    for (int i = 0; i < M; i++)
+    {
+        // inputs
+        Eigen::Vector3d x = eta.block<3,1>(0,i);
+        Eigen::Quaterniond q(eta(6,i),eta(3,i),eta(4,i),eta(5,i));
+        Eigen::Vector3d xg = qCam*x + xCam;
+        Eigen::Quaterniond qg = qCam*q;
+        Eigen::VectorXd pts;
+        if (streets)
+        {
+            double yaw = std::fmod(Eigen::AngleAxisd(qg).angle()+2*PI,2*PI); // [0,2*pi]
+            pts = Eigen::Vector3d(xg(0),xg(1),yaw);
+            //std::cout << "pt: " << pts.head<2>().transpose() << " " << 180*yaw/PI << std::endl;
+        }
+        else
+        {
+            pts = Eigen::Vector2d(xg(0),xg(1));
+        }
+        
+        // construct sigma
+        Eigen::MatrixXd dev;
+        if (streets)
+        {
+            Eigen::MatrixXd temp1 = mu.middleCols(0,2).transpose().colwise() - pts.head<2>();
+            Eigen::ArrayXd diff1 = (mu.col(2).array() - pts(2)).abs();
+            Eigen::MatrixXd temp2 = diff1.min(2*PI-diff1);
+            dev.resize(3,N);
+            dev << temp1, temp2.transpose();
+        
+            Eigen::MatrixXd test = Eigen::MatrixXd::Zero(N,4);
+            test.col(0) = Eigen::VectorXd::LinSpaced(mu.rows(),0,mu.rows()-1);
+            test.middleCols(1,3) = dev.transpose();
+            //test.middleCols(4,2) = temp1.transpose();
+            //test.col(6) = temp2;
+            //std::cout << "dev \t\t\t temp1 \t\t temp2" << std::endl;
+            //std::cout << test << std::endl;
+        }
+        else
+        {
+            dev = mu.transpose().colwise() - pts;
+        }
+        Eigen::MatrixXd sigma = (-0.5*(dev.array()*(cov*dev).array()).colwise().sum()).exp();
+        
+        int sigmaMaxInd1, sigmaMaxInd2;
+        sigma.maxCoeff(&sigmaMaxInd1,&sigmaMaxInd2);
+        //std::cout << "muMax: " << mu.block<1,2>(sigmaMaxInd2,0) << " " << mu(sigmaMaxInd2,2)*180/PI << std::endl;
+        //std::cout << "sigmaMaxInd2: " << sigmaMaxInd2 << std::endl;
+        int devMinInd;
+        dev.colwise().norm().minCoeff(&devMinInd);
+        //std::cout << "dev min: " << devMinInd << std::endl;
+        
+        
+        Eigen::MatrixXd sigmaMat = Eigen::MatrixXd::Zero(6,6*N);
+        for (int j = 0; j < 6; j++) { sigmaMat.block(j,j*N,1,N) = sigma; } // kron(I(6),sigma)  NORMALIZATION: /sigma.sum()
+        
+        // construct T
+        Eigen::Matrix<double, 4, 3> Bq = diffMat(q);
+        T.block<4,3>(3,3) = 0.5*Bq;
+        
+        Y.middleRows(7*i,7) = T*sigmaMat;
+    }
+    
+    return Y;
+}
+
+Eigen::Matrix<double, 7, 1> fFunc(const Eigen::Matrix<double, 7, 1>& eta, const Eigen::Vector3d& vCc, const Eigen::Vector3d& wGCc)
+{
+    Eigen::Vector3d x = eta.head<3>();
+    Eigen::Quaterniond q(eta(6),eta(3),eta(4),eta(5));
+    
+    Eigen::Vector3d f1 = vCc + wGCc.cross(x);
+    Eigen::Vector4d f2 = 0.5*diffMat(q)*(q.inverse()*wGCc);
+    
+    Eigen::Matrix<double, 7, 1> out;
+    out << f1, f2;
+    return -1*out;
+}
+
 
 class DataHandler
 {
@@ -39,7 +162,8 @@ class DataHandler
     
     // Regressor parameters
     Eigen::MatrixXd mu;
-    Eigen::Matrix2d cov;
+    Eigen::MatrixXd cov;
+    bool streets;
     
     // Visibility
     ros::Timer watchdogTimer;
@@ -67,11 +191,12 @@ public:
     Eigen::Matrix<double, 7, 1> scriptF;
     Eigen::MatrixXd scriptY;
     
-    DataHandler(tf::TransformListener& tflIn, double visibilityTimeout, double intWindowIn, const Eigen::MatrixXd& muIn, const Eigen::Matrix2d& covIn) : tfl(tflIn)
+    DataHandler(tf::TransformListener& tflIn, double visibilityTimeout, double intWindowIn, const Eigen::MatrixXd& muIn, const Eigen::MatrixXd& covIn) : tfl(tflIn)
     {
         ros::NodeHandle nhp("~");
         nhp.param<std::string>("markerID",markerID,"100");
         nhp.param<bool>("artificialSwitching", artificialSwitching, false);
+        nhp.param<bool>("streets", streets, false);
         std::vector<double> delTonDefault; delTonDefault.push_back(15.0); delTonDefault.push_back(30.0);
         std::vector<double> delToffDefault; delToffDefault.push_back(10.0); delToffDefault.push_back(20.0);
         nhp.param< std::vector<double> >("delTon", delTon, delTonDefault);
@@ -97,7 +222,7 @@ public:
         eta << Eigen::Matrix<double,6,1>::Zero(), 1;
         scriptEta << Eigen::Matrix<double,7,1>::Zero();
         scriptF << Eigen::Matrix<double,7,1>::Zero();
-        scriptY = Eigen::MatrixXd::Zero(7,6*mu.cols());
+        scriptY = Eigen::MatrixXd::Zero(7,6*mu.rows());
         
         // Switching
         if (artificialSwitching)
@@ -217,7 +342,7 @@ public:
         tBuff.push_back(pose->header.stamp.toSec());
         etaBuff.push_back(eta);
         fBuff.push_back(fFunc(eta,vCc,wGCc));
-        sigmaBuff.push_back(sigmaGen(eta,xCam,qCam,mu,cov));
+        sigmaBuff.push_back(sigmaGen(streets,eta,xCam,qCam,mu,cov));
         while ((tBuff.back() - tBuff.front()) > intWindow)
         {
             tBuff.pop_front();
@@ -241,81 +366,10 @@ public:
     }
 };
 
-// CHANGE THIS TEMPLATE TO MATCH SIGNUM FUNCTION BELOW?
-template <typename T>
-T trapz(std::deque<double> tBuff, std::deque<T> dataBuff)
-{
-    T out = T::Zero(dataBuff.at(0).rows(),dataBuff.at(0).cols());
-    for (int i = 1; i < tBuff.size(); i++)
-    {
-        out += 0.5*(tBuff.at(i)-tBuff.at(i-1))*(dataBuff.at(i) + dataBuff.at(i-1));
-    }
-    
-    return out;
-}
 
-Eigen::MatrixXd sigmaGen(const Eigen::Matrix<double, 7, Eigen::Dynamic>& eta, const Eigen::Vector3d& xCam, const Eigen::Quaterniond& qCam, const Eigen::Matrix<double, Eigen::Dynamic, 2>& mu, const Eigen::Matrix2d& cov)
+template <typename T> int sgn(T val)
 {
-    // eta: 7xM
-    // mu: Nxdim
-    
-    int dim = 2;
-    int M = eta.cols();
-    int N = mu.rows();
-    
-    Eigen::MatrixXd T = Eigen::MatrixXd::Zero(7,6);
-    Eigen::Matrix3d Q = qCam.inverse().toRotationMatrix();
-    T.block<3,3>(0,0) = Q;
-    Eigen::MatrixXd Y(7*M,6*N);
-    for (int i = 0; i < M; i++)
-    {
-        // inputs
-        Eigen::Vector3d x = eta.block<3,1>(0,i);
-        Eigen::Quaterniond q(eta(6,i),eta(3,i),eta(4,i),eta(5,i));
-        Eigen::Vector3d xg = qCam*x + xCam;
-        Eigen::Quaterniond qg = qCam*q;
-        Eigen::Vector2d pts(xg(0),xg(1));
-        
-        // construct sigma
-        Eigen::MatrixXd dev = mu.transpose().colwise() - pts;
-        Eigen::MatrixXd sigma = (-0.5*(dev.array()*(cov*dev).array()).colwise().sum()).exp();
-        Eigen::MatrixXd sigmaMat = Eigen::MatrixXd::Zero(6,6*N);
-        for (int j = 0; j < 6; j++) { sigmaMat.block(j,j*N,1,N) = sigma/sigma.sum(); } // kron(I(6),sigma)
-        
-        // construct T
-        Eigen::Matrix<double, 4, 3> Bq = diffMat(q);
-        T.block<4,3>(3,3) = 0.5*Bq;
-        
-        Y.middleRows(7*i,7) = T*sigmaMat;
-    }
-    
-    return Y;
-}
-
-Eigen::Matrix<double, 7, 1> fFunc(const Eigen::Matrix<double, 7, 1>& eta, const Eigen::Vector3d& vCc, const Eigen::Vector3d& wGCc)
-{
-    Eigen::Vector3d x = eta.head<3>();
-    Eigen::Quaterniond q(eta(6),eta(3),eta(4),eta(5));
-    
-    Eigen::Vector3d f1 = vCc + wGCc.cross(x);
-    Eigen::Vector4d f2 = 0.5*diffMat(q)*(q.inverse()*wGCc);
-    
-    Eigen::Matrix<double, 7, 1> out;
-    out << f1, f2;
-    return -1*out;
-}
-
-// Calculate differential matrix for relationship between quaternion derivative and angular velocity.
-// qDot = 1/2*B*omega 
-// See strapdown inertial book. If quaternion is orientation of frame 
-// B w.r.t N in the sense that nP = q*bP*q', omega is ang. vel of frame B w.r.t. N,
-// i.e. N_w_B, expressed in the B coordinate system
-// q = [x,y,z,w]
-Eigen::Matrix<double,4,3> diffMat(const Eigen::Quaterniond& q)
-{
-    Eigen::Matrix<double,4,3> B;
-    B << q.w(), -q.z(), q.y(), q.z(), q.w(), -q.x(), -q.y(), q.x(), q.w(), -q.x(), -q.y(), -q.z();
-    return B;
+    return (T(0) < val) - (val < T(0));
 }
 
 template <typename Derived>
@@ -337,12 +391,14 @@ void updateStack(std::atomic<bool>& stackUpdateDone, std::mutex& m, const Eigen:
     
     int numData = scriptYstack.rows()/7;
     
-    Eigen::MatrixXd sumYtY = scriptYstack.transpose()*scriptYstack;
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver1(sumYtY,Eigen::EigenvaluesOnly);
-    double currEig = eigSolver1.eigenvalues().minCoeff();
-    std::cout << "currEig: " << currEig << std::endl;
+    ros::Duration(0.2).sleep();
     
-    if (currEig < 1e-10)
+    //Eigen::MatrixXd sumYtY = scriptYstack.transpose()*scriptYstack;
+    //Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver1(sumYtY,Eigen::EigenvaluesOnly);
+    //double currEig = eigSolver1.eigenvalues().minCoeff();
+    //std::cout << "currEig: " << currEig << std::endl;
+    
+    if (true) //(currEig < 1e-10)
     {
         std::default_random_engine generator(std::rand());
         std::uniform_int_distribution<int> distribution(0,numData-1);
@@ -350,49 +406,137 @@ void updateStack(std::atomic<bool>& stackUpdateDone, std::mutex& m, const Eigen:
         
         std::cout << "New data at random index " << maxInd << std::endl;
         
+        Eigen::MatrixXd tempTerm1 = term1;
+        Eigen::MatrixXd tempTerm2 = term2;
+        
+        // subtract old
+        tempTerm1 -= scriptYstack.middleRows(7*maxInd,7).transpose()*(etaStack.middleRows(7*maxInd,7) - scriptFstack.middleRows(7*maxInd,7));
+        tempTerm2 -= -1*scriptYstack.middleRows(7*maxInd,7).transpose()*scriptYstack.middleRows(7*maxInd,7);
+        
+        // add new new
+        tempTerm1 += scriptYHere.transpose()*(scriptEtaHere - scriptFHere);
+        tempTerm2 += -1*scriptYHere.transpose()*scriptYHere;
+        
         etaStack.middleRows(7*maxInd,7) = scriptEtaHere;
         scriptFstack.middleRows(7*maxInd,7) = scriptFHere;
         scriptYstack.middleRows(7*maxInd,7) = scriptYHere;
         
-        Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
-        Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
+        //Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
+        //Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
         
         m.lock();
         term1 = tempTerm1;
         term2 = tempTerm2;
         m.unlock();
     }
-    else
+    //else
+    //{
+        //// New stack
+        //sumYtY += scriptYHere.transpose()*scriptYHere;
+        //Eigen::VectorXd newEigVals = Eigen::VectorXd::Zero(numData);
+        //for (int i = 0; i < numData; i++)
+        //{
+            //Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver2(sumYtY-scriptYstack.middleRows(7*i,7).transpose()*scriptYstack.middleRows(7*i,7),Eigen::EigenvaluesOnly);
+            //newEigVals(i) = eigSolver2.eigenvalues().minCoeff();
+        //}
+        
+        //// Replace with new data
+        //int maxInd;
+        //if (newEigVals.maxCoeff(&maxInd) > currEig)
+        //{
+            //std::cout << "New data at index " << maxInd << std::endl;
+            
+            //etaStack.middleRows(7*maxInd,7) = scriptEtaHere;
+            //scriptFstack.middleRows(7*maxInd,7) = scriptFHere;
+            //scriptYstack.middleRows(7*maxInd,7) = scriptYHere;
+            
+            //Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
+            //Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
+            
+            //m.lock();
+            //term1 = tempTerm1;
+            //term2 = tempTerm2;
+            //m.unlock();
+        //}
+    //}
+    stackUpdateDone = true;
+}
+
+int initNN(bool streets, Eigen::MatrixXd& cov, Eigen::MatrixXd& mu)
+{
+    ros::NodeHandle nhp("~");
+    int numKernal;
+    if (streets)
     {
-        // New stack
-        sumYtY += scriptYHere.transpose()*scriptYHere;
-        Eigen::VectorXd newEigVals = Eigen::VectorXd::Zero(numData);
-        for (int i = 0; i < numData; i++)
+        double kernalSeparation;
+        nhp.param<double>("kernalSeparation", kernalSeparation, 0.3);
+        
+        ros::NodeHandle nh;
+        ros::ServiceClient client = nh.serviceClient<switch_vis_exp::RoadMap>("/get_map");
+        switch_vis_exp::RoadMap srv;
+        while (!client.call(srv)) {}
+        std::vector<Eigen::Vector3d> MUs;
+        std::cout << "numRoads: " << srv.response.pt1.size() << std::endl;
+        for (int i = 0; i < srv.response.pt1.size(); i++)
         {
-            Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigSolver2(sumYtY-scriptYstack.middleRows(7*i,7).transpose()*scriptYstack.middleRows(7*i,7),Eigen::EigenvaluesOnly);
-            newEigVals(i) = eigSolver2.eigenvalues().minCoeff();
+            Eigen::Vector3d pt1(srv.response.pt1.at(i).x,srv.response.pt1.at(i).y,srv.response.pt1.at(i).z);
+            Eigen::Vector3d pt2(srv.response.pt2.at(i).x,srv.response.pt2.at(i).y,srv.response.pt2.at(i).z);
+            Eigen::Vector3d line = pt2 - pt1;
+            
+            int numNewKernals = (int) std::round(line.norm()/kernalSeparation);
+            double angle = std::fmod(std::atan2(line(1),line(0)) + 2*PI,2*PI); // [0,2*pi]
+            for (int j = 1; j < numNewKernals; j++)
+            {
+                Eigen::Vector3d newPt = pt1 + j*kernalSeparation*line.normalized();
+                MUs.push_back(Eigen::Vector3d(newPt(0),newPt(1),angle));
+                MUs.push_back(Eigen::Vector3d(newPt(0),newPt(1),std::fmod(angle+PI,2*PI)));
+            }
+        }
+        mu.resize(MUs.size(),3);// Nx3
+        numKernal = mu.rows();
+        for (int i = 0; i < MUs.size(); i++)
+        {
+            mu.row(i) = MUs.at(i).transpose();
         }
         
-        // Replace with new data
-        int maxInd;
-        if (newEigVals.maxCoeff(&maxInd) > currEig)
-        {
-            std::cout << "New data at index " << maxInd << std::endl;
-            
-            etaStack.middleRows(7*maxInd,7) = scriptEtaHere;
-            scriptFstack.middleRows(7*maxInd,7) = scriptFHere;
-            scriptYstack.middleRows(7*maxInd,7) = scriptYHere;
-            
-            Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
-            Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
-            
-            m.lock();
-            term1 = tempTerm1;
-            term2 = tempTerm2;
-            m.unlock();
-        }
+        
+        Eigen::MatrixXd muTemp = Eigen::MatrixXd::Zero(mu.rows(),4);
+        muTemp.col(0) = Eigen::VectorXd::LinSpaced(mu.rows(),0,mu.rows()-1);
+        muTemp.middleCols(1,3) = mu;
+        muTemp.col(3) *= 180/PI;
+        std::cout << "mu: " << mu.rows() << std::endl << muTemp << std::endl;
+        
+        Eigen::MatrixXd tempCov = 0.1*Eigen::Matrix3d::Identity();
+        tempCov(2,2) = 0.1;
+        std::cout << "tempCov: " << std::endl << tempCov << std::endl;
+        cov = tempCov.inverse();
     }
-    stackUpdateDone = true;
+    else
+    {
+        double a, b, x0, y0, mapWidth, mapHeight;
+        int numKernalWidth, numKernalHeight;
+        nhp.param<double>("a", a, 1.0);
+        nhp.param<double>("b", b, 1.0);
+        nhp.param<double>("x0", x0, 1.0);
+        nhp.param<double>("y0", y0, 1.0);
+        nhp.param<int>("numKernalWidth", numKernalWidth, 9);
+        nhp.param<int>("numKernalHeight", numKernalHeight, 9);
+        mapWidth = 2*a;
+        mapHeight = 2*b;
+        numKernal = numKernalWidth*numKernalHeight; // N
+        cov = (0.3*Eigen::Matrix2d::Identity()).inverse();
+        Eigen::VectorXd muXvec = Eigen::VectorXd::LinSpaced(numKernalWidth,x0-mapWidth,x0+mapWidth);
+        Eigen::VectorXd muYvec = Eigen::VectorXd::LinSpaced(numKernalHeight,y0-mapHeight,y0+mapHeight);
+        Eigen::MatrixXd muXmat = muXvec.transpose().replicate(muYvec.rows(),1);
+        Eigen::MatrixXd muYmat = muYvec.replicate(1,muXvec.rows());
+        muXvec = Eigen::Map<Eigen::VectorXd>(muXmat.data(),muXmat.cols()*muXmat.rows()); // mat to vec
+        muYvec = Eigen::Map<Eigen::VectorXd>(muYmat.data(),muYmat.cols()*muYmat.rows());
+        mu.resize(2,muXvec.rows());
+        mu << muXvec.transpose(), muYvec.transpose();
+        mu.transposeInPlace(); // Nx2
+        
+    }
+    return numKernal;
 }
 
 int main(int argc, char** argv)
@@ -408,34 +552,18 @@ int main(int argc, char** argv)
     double k2 = 0.1;
     double kCL = 1;
     double intWindow = 0.1;
-    int CLstackSize = 600;
+    int CLstackSize = 2000;
     int stackFill = 0;
     double visibilityTimeout = 0.06;
     bool artificialSwitching;
     nhp.param<bool>("artificialSwitching", artificialSwitching, false);
     
     // Initialize Neural Network
-    double a, b, x0, y0, mapWidth, mapHeight;
-    int numKernalWidth, numKernalHeight;
-    nhp.param<double>("a", a, 1.0);
-    nhp.param<double>("b", b, 1.0);
-    nhp.param<double>("x0", x0, 1.0);
-    nhp.param<double>("y0", y0, 1.0);
-    nhp.param<int>("numKernalWidth", numKernalWidth, 9);
-    nhp.param<int>("numKernalHeight", numKernalHeight, 9);
-    mapWidth = 2*a;
-    mapHeight = 2*b;
-    int numKernal = numKernalWidth*numKernalHeight; // N
-    Eigen::Matrix2d cov = (0.3*Eigen::Matrix2d::Identity()).inverse();
-    Eigen::VectorXd muXvec = Eigen::VectorXd::LinSpaced(numKernalWidth,x0-mapWidth,x0+mapWidth);
-    Eigen::VectorXd muYvec = Eigen::VectorXd::LinSpaced(numKernalHeight,y0-mapHeight,y0+mapHeight);
-    Eigen::MatrixXd muXmat = muXvec.transpose().replicate(muYvec.rows(),1);
-    Eigen::MatrixXd muYmat = muYvec.replicate(1,muXvec.rows());
-    muXvec = Eigen::Map<Eigen::VectorXd>(muXmat.data(),muXmat.cols()*muXmat.rows()); // mat to vec
-    muYvec = Eigen::Map<Eigen::VectorXd>(muYmat.data(),muYmat.cols()*muYmat.rows());
-    Eigen::MatrixXd mu(2,muXvec.rows());
-    mu << muXvec.transpose(), muYvec.transpose();
-    mu.transposeInPlace(); // Nx2
+    bool streets;
+    nhp.param<bool>("streets", streets, false);
+    Eigen::MatrixXd cov, mu;
+    int numKernal = initNN(streets,cov,mu);
+    
     
     // Initialize integral concurrent learning history stacks
     Eigen::VectorXd etaStack = Eigen::VectorXd::Zero(7*CLstackSize);
@@ -446,6 +574,7 @@ int main(int argc, char** argv)
     Eigen::Matrix<double,7,1> scriptF = Eigen::Matrix<double,7,1>::Zero();
     Eigen::MatrixXd scriptY = Eigen::MatrixXd::Zero(7,6*numKernal);
     Eigen::MatrixXd Gamma = Eigen::MatrixXd::Identity(6*numKernal,6*numKernal);
+    std::srand(ros::Time::now().nsec);
     
     // Publisher
     ros::Publisher outputPub = nh.advertise<switch_vis_exp::Output>("output",10);
@@ -465,6 +594,8 @@ int main(int argc, char** argv)
         ros::spinOnce();
         ros::Duration(0.2).sleep();
     }
+    
+    ROS_INFO("here Main");
     
     // Main loop
     std::mutex m;
@@ -527,12 +658,13 @@ int main(int argc, char** argv)
         Eigen::Matrix<double,Eigen::Dynamic,1> thetaHatDot;
         if (callbacks.estimatorOn) // estimator
         {
-            phiHat = sigmaGen(eta,xCam,qCam,mu,cov)*thetaHat;
+            Eigen::MatrixXd Y = sigmaGen(streets,eta,xCam,qCam,mu,cov);
+            phiHat = Y*thetaHat;
             //etaHatDot = phi + fFunc(eta,vCc,wGCc) + k1*etaTilde + k2*signum(etaTilde);
             etaHatDot = phiHat + fFunc(eta,vCc,wGCc) + k1*etaTilde + k2*signum(etaTilde);
-            thetaHatDot = Gamma*sigmaGen(eta,xCam,qCam,mu,cov).transpose()*etaTilde + kCL*Gamma*sum;
+            thetaHatDot = Gamma*Y.transpose()*etaTilde + kCL*Gamma*sum;
             
-            if (fillAmount < CLstackSize) // fill stack until full
+            if (false) //(fillAmount < CLstackSize) // fill stack until full
             {
                 etaStack.middleRows(7*fillAmount,7) = scriptEta;
                 scriptFstack.middleRows(7*fillAmount,7) = scriptF;
@@ -550,11 +682,13 @@ int main(int argc, char** argv)
                     stackUpdateDone = false;
                     stackThread = std::thread(updateStack,std::ref(stackUpdateDone),std::ref(m),std::ref(scriptEta),std::ref(scriptF),std::ref(scriptY),std::ref(etaStack),std::ref(scriptFstack),std::ref(scriptYstack),std::ref(term1),std::ref(term2));
                 }
+                
+                //updateStack(stackUpdateDone, m, scriptEta, scriptF, scriptY, etaStack, scriptFstack, scriptYstack, term1, term2);
             }
         }
         else // predictor
         {
-            phiHat = sigmaGen(etaHat,xCam,qCam,mu,cov)*thetaHat;
+            phiHat = sigmaGen(streets,etaHat,xCam,qCam,mu,cov)*thetaHat;
             //etaHatDot = phi + fFunc(etaHat,vCc,wGCc);
             etaHatDot = phiHat + fFunc(etaHat,vCc,wGCc);
             thetaHatDot = kCL*Gamma*sum;
@@ -601,9 +735,12 @@ int main(int argc, char** argv)
     return 0;
 }
 
-void genData(double x0, double y0, double mapWidth, double mapHeight, const Eigen::MatrixXd& mu, const Eigen::Matrix2d& cov, int& fillAmount, Eigen::VectorXd& etaStack, Eigen::VectorXd& scriptFstack, Eigen::MatrixXd& scriptYstack)
+void genData(double x0, double y0, double mapWidth, double mapHeight, const Eigen::MatrixXd& mu, const Eigen::MatrixXd& cov, int& fillAmount, Eigen::VectorXd& etaStack, Eigen::VectorXd& scriptFstack, Eigen::MatrixXd& scriptYstack)
 {
     ros::NodeHandle nh;
+    ros::NodeHandle nhp("~");
+    bool streets;
+    nhp.param<bool>("streets", streets, false);
     ros::ServiceClient client = nh.serviceClient<switch_vis_exp::MapVel>("/get_velocity");
     Eigen::Vector3d xCam(0,0,0);
     Eigen::Quaterniond qCam(1,0,0,0);
@@ -613,7 +750,7 @@ void genData(double x0, double y0, double mapWidth, double mapHeight, const Eige
            (mapHeight*Eigen::VectorXd::Random(numPts).array()+y0).transpose(),
            Eigen::Matrix<double, 4, Eigen::Dynamic>::Zero(4,numPts),
            Eigen::Matrix<double, 1, Eigen::Dynamic>::Ones(1,numPts);
-    Eigen::MatrixXd Y = sigmaGen(eta, xCam, qCam, mu, cov);
+    Eigen::MatrixXd Y = sigmaGen(streets,eta, xCam, qCam, mu, cov);
     switch_vis_exp::MapVel srv;
     for (int i = 0; i < eta.cols(); i++)
     {

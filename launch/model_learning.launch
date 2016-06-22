@@ -4,6 +4,7 @@
     <arg name="sim" default="true" />
     <arg name="recordData" default="false" /> <!-- record to rosbag -->
     <arg name="artificialSwitching" default="false" />
+    <arg name="streets" default="false" />
     <arg name="a" default="1.5" />
     <arg name="b" default="1.5" />
     <arg name="x0" default="-1.0" />
@@ -15,10 +16,13 @@
       <param name="b" value="$(arg b)" />
       <param name="x0" value="$(arg x0)" />
       <param name="y0" value="$(arg y0)" />
+      <param name="streets" value="$(arg streets)" />
     </node>
     
     <group if="$(arg sim)" >
-        <node pkg="switch_vis_exp" type="sim.py" name="sim" output="screen"/>
+        <node pkg="switch_vis_exp" type="sim.py" name="sim" output="screen">
+          <param name="streets" value="$(arg streets)" />
+        </node>
         <node pkg="rviz" type="rviz" name="rviz" />
         
         <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" >
@@ -29,6 +33,7 @@
           <param name="k1" value="0.5" />
           <param name="k2" value="0.5" />
           <param name="doRotation" value="true" />
+          <param name="streets" value="$(arg streets)" />
         </node>
     </group>
     

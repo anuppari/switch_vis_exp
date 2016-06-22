@@ -1,3 +1,7 @@
 geometry_msgs/Pose[] pose
+int32[] fromNode
+int32[] toNode
 ---
 geometry_msgs/Twist[] twist
+int32[] fromNode
+int32[] toNode
