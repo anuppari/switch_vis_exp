@@ -42,6 +42,18 @@ Eigen::Matrix<double,4,3> diffMat(const Eigen::Quaterniond& q)
     return B;
 }
 
+template <typename T> int sgn(T val)
+{
+    return (T(0) < val) - (val < T(0));
+}
+
+template <typename Derived>
+Eigen::MatrixXd signum(const Eigen::MatrixBase<Derived>& inMat)
+{
+    //Eigen::ArrayXXd zero = Eigen::ArrayXXd::Zero(inMat.rows(),inMat.cols);
+    return ((inMat.array() > 0).template cast<double>() - (inMat.array() < 0).template cast<double>()).matrix();
+}
+
 // CHANGE THIS TEMPLATE TO MATCH SIGNUM FUNCTION BELOW?
 template <typename T>
 T trapz(std::deque<double> tBuff, std::deque<T> dataBuff)
@@ -76,12 +88,13 @@ Eigen::MatrixXd sigmaGen(bool streets, const Eigen::Matrix<double, 7, Eigen::Dyn
         Eigen::Quaterniond q(eta(6,i),eta(3,i),eta(4,i),eta(5,i));
         Eigen::Vector3d xg = qCam*x + xCam;
         Eigen::Quaterniond qg = qCam*q;
+        qg.normalize();
         Eigen::VectorXd pts;
         if (streets)
         {
-            double yaw = std::fmod(Eigen::AngleAxisd(qg).angle()+2*PI,2*PI); // [0,2*pi]
+            Eigen::AngleAxisd axisAng(qg);
+            double yaw = std::fmod(sgn(axisAng.axis().dot(Eigen::Vector3d::UnitZ()))*axisAng.angle()+2*PI,2*PI); // [0,2*pi]
             pts = Eigen::Vector3d(xg(0),xg(1),yaw);
-            //std::cout << "pt: " << pts.head<2>().transpose() << " " << 180*yaw/PI << std::endl;
         }
         else
         {
@@ -366,19 +379,6 @@ public:
     }
 };
 
-
-template <typename T> int sgn(T val)
-{
-    return (T(0) < val) - (val < T(0));
-}
-
-template <typename Derived>
-Eigen::MatrixXd signum(const Eigen::MatrixBase<Derived>& inMat)
-{
-    //Eigen::ArrayXXd zero = Eigen::ArrayXXd::Zero(inMat.rows(),inMat.cols);
-    return ((inMat.array() > 0).template cast<double>() - (inMat.array() < 0).template cast<double>()).matrix();
-}
-
 //void updateStack(std::atomic<bool>& stackUpdateDone, std::mutex& m, const Eigen::Matrix<double,7,1>& scriptEta, const Eigen::Matrix<double,7,1>& scriptF, const Eigen::MatrixXd& scriptY, std::vector< Eigen::Matrix<double,7,1> >& etaStack, std::vector< Eigen::Matrix<double,7,1> >& scriptFstack, std::vector< Eigen::Matrix<double,7,Eigen::Dynamic> >& scriptYstack)
 void updateStack(std::atomic<bool>& stackUpdateDone, std::mutex& m, const Eigen::Matrix<double,7,1>& scriptEta, const Eigen::Matrix<double,7,1>& scriptF, const Eigen::MatrixXd& scriptY, Eigen::VectorXd& etaStack, Eigen::VectorXd& scriptFstack, Eigen::MatrixXd& scriptYstack, Eigen::MatrixXd& term1, Eigen::MatrixXd& term2)
 {
@@ -553,7 +553,7 @@ int main(int argc, char** argv)
     double k2 = 0.1;
     double kCL = 1;
     double intWindow = 0.1;
-    int CLstackSize = 2000;
+    int CLstackSize = 1500;
     int stackFill = 0;
     double visibilityTimeout = 0.06;
     bool artificialSwitching;
