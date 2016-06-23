@@ -159,8 +159,8 @@ public:
                     {
                         Eigen::Vector3d line = roads.at(j).pt2 - roads.at(j).pt1;
                         Eigen::Vector3d v = pos - roads.at(j).pt1;
-                        double scale = line.normalized().dot(v);
-                        double dist = (v - scale*line.normalized()).norm();
+                        double scale = line.normalized().dot(v)/line.norm();
+                        double dist = (v - scale*line).norm();
                         
                         if ((dist < minDist) && (0.0 <= scale) && (scale <= 1.0))
                         {
@@ -189,10 +189,10 @@ public:
                 }
                 
                 // Update path if needed
-                int roadInd = node2road(fromNode,toNode);
-                Eigen::Vector3d line = roads.at(roadInd).pt2 - roads.at(roadInd).pt1;
-                Eigen::Vector3d vec = pos - roads.at(roadInd).pt1;
-                double scale = line.normalized().dot(vec);
+                //int roadInd = node2road(fromNode,toNode);
+                //Eigen::Vector3d line = roads.at(roadInd).pt2 - roads.at(roadInd).pt1;
+                //Eigen::Vector3d vec = pos - roads.at(roadInd).pt1;
+                //double scale = line.normalized().dot(vec)/line.norm();
                 if (((nodeLocations.row(toNode) - pos.transpose()).norm() < nodeDistThresh))
                 {
                     // Determine possible next nodes
