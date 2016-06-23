@@ -71,13 +71,13 @@ public:
         nodeLocations *= 2;
         node2road = -1*Eigen::MatrixXi::Ones(numNodes,numNodes);
         adjMat.resize(numNodes,numNodes);
-        adjMat << 1, 1, 0, 1, 0, 0, 0,
-                  1, 1, 1, 1, 0, 0, 0,
-                  0, 1, 1, 0, 1, 0, 0,
-                  1, 1, 0, 1, 1, 1, 0,
-                  0, 0, 1, 1, 1, 0, 1,
-                  0, 0, 0, 1, 0, 1, 1,
-                  0, 0, 0, 0, 1, 1, 1;
+        adjMat << 0, 1, 0, 1, 0, 0, 0,
+                  1, 0, 1, 1, 0, 0, 0,
+                  0, 1, 0, 0, 1, 0, 0,
+                  1, 1, 0, 0, 1, 1, 0,
+                  0, 0, 1, 1, 0, 0, 1,
+                  0, 0, 0, 1, 0, 0, 1,
+                  0, 0, 0, 0, 1, 1, 0;
         
         for (int i = 0; i < numNodes; i++)
         {
@@ -189,11 +189,11 @@ public:
                 }
                 
                 // Update path if needed
-                //int roadInd = node2road(fromNode,toNode);
-                //Eigen::Vector3d line = roads.at(roadInd).pt2 - roads.at(roadInd).pt1;
-                //Eigen::Vector3d vec = pos - roads.at(roadInd).pt1;
-                //double scale = line.normalized().dot(vec)/line.norm();
-                if (((nodeLocations.row(toNode) - pos.transpose()).norm() < nodeDistThresh))
+                int roadInd = node2road(fromNode,toNode);
+                Eigen::Vector3d line = roads.at(roadInd).pt2 - roads.at(roadInd).pt1;
+                Eigen::Vector3d vec = pos - roads.at(roadInd).pt1;
+                double scale = line.normalized().dot(vec)/line.norm();
+                if (((nodeLocations.row(toNode) - pos.transpose()).norm() < nodeDistThresh) || (scale < -0.1) || (scale > 1.1))
                 {
                     // Determine possible next nodes
                     std::vector<int> nextNodes;
