@@ -487,7 +487,8 @@ int initNN(bool streets, Eigen::MatrixXd& cov, Eigen::MatrixXd& mu)
             double angle = std::fmod(std::atan2(line(1),line(0)) + 2*PI,2*PI); // [0,2*pi]
             for (int j = 1; j < numNewKernals; j++)
             {
-                Eigen::Vector3d newPt = pt1 + j*kernalSeparation*line.normalized();
+                double actualKernalSeparation = line.norm()/numNewKernals;
+                Eigen::Vector3d newPt = pt1 + j*actualKernalSeparation*line.normalized();
                 MUs.push_back(Eigen::Vector3d(newPt(0),newPt(1),angle));
                 MUs.push_back(Eigen::Vector3d(newPt(0),newPt(1),std::fmod(angle+PI,2*PI)));
             }
