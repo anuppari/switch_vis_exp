@@ -126,6 +126,7 @@ add_executable(model_learning_node src/model_learning_node.cpp)
 add_executable(sim_node src/sim_node.cpp)
 add_executable(velocity_map_node src/velocity_map_node.cpp)
 add_executable(turtlebot_control_node src/turtlebot_control_node.cpp)
+add_executable(bebop_control_node src/bebop_control_node.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
@@ -136,6 +137,7 @@ add_dependencies(model_learning_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catki
 add_dependencies(sim_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(velocity_map_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(turtlebot_control_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(bebop_control_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(filter_node
@@ -161,6 +163,9 @@ target_link_libraries(velocity_map_node
   ${catkin_LIBRARIES}
 )
 target_link_libraries(turtlebot_control_node
+  ${catkin_LIBRARIES}
+)
+target_link_libraries(bebop_control_node
   ${catkin_LIBRARIES}
 )
 

@@ -3,38 +3,45 @@
 <launch>
   <!-- Launch Parameters -->
   <arg name="drive" default="false" /> <!-- drive turtlebot in circles -->
+  <arg name="streets" default="false" /> <!-- drive along road network -->
   <arg name="cameraName" default="camera" /> <!-- camera topic -->
   <arg name="drawMarkers" default="true" /> <!-- show marker track from aruco -->
   <arg name="showViz" default="true" /> <!-- Launch rviz -->
   <arg name="a" default="1.5" /> <!-- track width -->
   <arg name="b" default="1.5" /> <!-- track height -->
-  <arg name="x0" default="-1.0" /> <!-- track center -->
+  <arg name="x0" default="0.25" /> <!-- track center -->
   <arg name="y0" default="0.0" /> <!-- track center -->
   
   <!-- Launch motion capture system listener -->
   <include file="$(find mocap_optitrack)/launch/mocap.launch" />
   
   <!-- Launch camera driver -->
-  <include file="$(find ueye_cam)/launch/cam.launch" />
+  <!-- <include file="$(find ueye_cam)/launch/cam.launch" /> -->
+  <include file="$(find bebop_driver)/launch/bebop_node.launch" />
   <!-- <include file="$(find bluefox2)/launch/single_node.launch" /> -->
   
   <!-- Launch tag tracker -->
+<!--
   <include file="$(find aruco_ros)/launch/aruco.launch" >
     <arg name="cameraName" value="$(arg cameraName)" />
     <arg name="drawMarkers" value="$(arg drawMarkers)" />
     <arg name="view" value="false" />
     <arg name="adaptiveROI" value="true" />
-    <arg name="markerSize" value="0.2032" /> <!-- [meters] -->
+    <arg name="markerSize" value="0.2032" /> 
     <arg name="image_frame_id" value="image" />
     <arg name="republishCamInfo" value="true" />
     <arg name="adaptiveROIfactor" value="0.4" />
   </include>
+-->
   
   <!-- Launch camera to image frame tf publisher. Transform between mocap rigid body of camera and actual image coordinate system -->
   <!-- <node pkg="tf" type="static_transform_publisher" name="image_broadcaster" args="-0.0868978 0.0104688 -0.0126028 -0.57167 -0.434797 0.441465 0.537815 camera image 100" /> -->
+<!--
   <node pkg="tf" type="static_transform_publisher" name="image_broadcaster" args="-0.0735883 0.0494459 0.0115187 -0.59711 -0.264079 0.332563 0.680528 camera image 100" />
+-->
   
   <!-- Launch world to image pose publisher (i.e. publish pose messages for the corresponding tf) -->
+<!--
   <node pkg="robot_pose_publisher" type="robot_pose_publisher" name="robot_pose_publisher" output="screen" >
     <param name="map_frame" value="world" />
     <param name="base_frame" value="image" />
@@ -42,26 +49,40 @@
     <param name="is_stamped" value="true" />
     <remap from="robot_pose" to="image/pose" />
   </node>
+-->
   
   <!-- Camera velocity from mocap filter node (backwards difference of pose) -->
-  <node pkg="switch_vis_exp" type="filter_node" name="image_vel_filter" ns="image" output="screen" />
+  <!-- <node pkg="switch_vis_exp" type="filter_node" name="image_vel_filter" ns="image" output="screen" /> -->
+  <node pkg="switch_vis_exp" type="filter_node" name="bebop_vel_filter" ns="bebop" output="screen" />
   
   <!-- Turtlebot velocity from mocap filter node (backwards difference of pose) -->
   <node pkg="switch_vis_exp" type="filter_node" name="turtlebot_vel_filter" ns="ugv0" output="screen" />
   
+  <!-- Bebop follows turtlebot autonomously -->
+  <node pkg="switch_vis_exp" type="bebop_control_node" name="bebop_control_node" output="screen" >
+    <param name="lazy" value="true" />
+    <param name="kp" value="0.8" />
+    <param name="kw" value="1.5" />
+  </node>
+  <node pkg="joy" type="joy_node" name="joy" output="screen" >
+    <param name="dev" value="/dev/input/js1" />
+  </node>
+  
   <!-- Move turtlebot along track, xbox controller can override if joy enabled in turtlebot launch file -->
   <group if="$(arg drive)" >
     <node pkg="switch_vis_exp" type="velocity_map_node" name="velocity_map" output="screen" >
-      <param name="a" value="$(arg a)" /> <!-- track width -->
+      <param name="a" value="$(arg a)" />  track width 
       <param name="b" value="$(arg b)" /> <!-- track height -->
       <param name="x0" value="$(arg x0)" /> <!-- track center -->
       <param name="y0" value="$(arg y0)" /> <!-- track center -->
       <param name="k1" value="0.5" />
       <param name="k2" value="0.5" />
+      <param name="streetSpeed" value="0.8" />
+      <param name="streets" value="$(arg streets)" />
     </node>
     <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control" ns="ugv0" output="screen" >
       <param name="loopRate" value="50.0" />
-      <param name="kw1" value="15.0" />
+      <param name="kw1" value="1.0" />
       <param name="kw2" value="0.01" />
     </node>
   </group>

@@ -24,6 +24,9 @@ class turtlebot_control
     double loopRate;
     std::string turtlebotName;
     
+    int fromNode;
+    int toNode;
+    
 public:
     turtlebot_control()
     {
@@ -33,6 +36,8 @@ public:
         nhp.param<double>("kw2",kw2,1);
         nhp.param<double>("loopRate",loopRate,10); //Hz
         turtlebotName = ros::names::clean(ros::this_node::getNamespace()).substr(1,std::string::npos);
+        fromNode = -1;
+        toNode = -1;
         
         // publishers
         velPub = nh.advertise<geometry_msgs::Twist>("cmd_vel_mux/input/navi",1);
@@ -74,10 +79,16 @@ public:
         poseMsg.orientation.z = orientation.getZ();
         poseMsg.orientation.w = orientation.getW();
         srv.request.pose.push_back(poseMsg);
+        srv.request.fromNode.push_back(fromNode);
+        srv.request.toNode.push_back(toNode);
         
         // Call service
         if (client.call(srv))
         {
+            // Get nodes
+            fromNode = srv.response.fromNode.at(0);
+            toNode = srv.response.toNode.at(0);
+            
             // get velocity
             Eigen::Vector3d des_vel;
             des_vel << srv.response.twist.at(0).linear.x, srv.response.twist.at(0).linear.y, srv.response.twist.at(0).linear.z;
@@ -96,11 +107,14 @@ public:
             srv.request.pose.at(0).position.x += xDot[0];
             srv.request.pose.at(0).position.y += xDot[1];
             srv.request.pose.at(0).position.z += xDot[2];
+            srv.request.fromNode.at(0) = fromNode;
+            srv.request.toNode.at(0) = toNode;
             
             if (client.call(srv))
             {
                 Eigen::Vector3d vNext;
                 vNext << srv.response.twist.at(0).linear.x, srv.response.twist.at(0).linear.y, srv.response.twist.at(0).linear.z;
+                fromNode = srv.response.fromNode.at(0); toNode = srv.response.toNode.at(0);
                 Eigen::Vector3d xDir(1,0,0);
                 //Eigen::Vector3d w = kw*xDir.cross(des_body_vel/des_body_vel.norm()); // angular velocity command
                 Eigen::Vector3d crossTerm = xDir.cross(des_body_vel/des_body_vel.norm());

@@ -29,9 +29,11 @@ class velocity_map
     double y0;      // track center
     double k1;      // overall velocity gain
     double k2;      // weighting between getting back to track and moving in direction of track
+    double streetScale;
     double nodeDistThresh;
     int n;          // sharpness and squareness of track
     bool doRotation;
+    double speed;
     
     // graph parameters
     bool streets;
@@ -50,8 +52,10 @@ public:
         nhp.param<double>("b",b,2);
         nhp.param<double>("x0",x0,0);
         nhp.param<double>("y0",y0,0);
+        nhp.param<double>("streetScale",streetScale,2);
         nhp.param<double>("k1",k1,0.5);
         nhp.param<double>("k2",k2,0.1);
+        nhp.param<double>("streetSpeed",speed,0.5);
         nhp.param<double>("nodeDistThresh",nodeDistThresh,0.2);
         nhp.param<int>("n",n,4);
         nhp.param<bool>("doRotation",doRotation,false);
@@ -68,7 +72,8 @@ public:
                          1.0, 0.0, 0.0,
                          -1.0, -1.0, 0.0,
                          1.0, -1.0, 0.0;
-        nodeLocations *= 2;
+        nodeLocations *= streetScale;
+        nodeLocations.rowwise() += Eigen::Vector3d(x0,y0,0).transpose();
         node2road = -1*Eigen::MatrixXi::Ones(numNodes,numNodes);
         adjMat.resize(numNodes,numNodes);
         adjMat << 0, 1, 0, 1, 0, 0, 0,
@@ -138,8 +143,6 @@ public:
     {
         if (streets)
         {
-            double speed = 0.5;
-            
             for (int i = 0; i < req.pose.size(); i++)
             {
                 Eigen::Vector3d pos(req.pose.at(i).position.x,req.pose.at(i).position.y,req.pose.at(i).position.z);
@@ -193,7 +196,7 @@ public:
                 Eigen::Vector3d line = roads.at(roadInd).pt2 - roads.at(roadInd).pt1;
                 Eigen::Vector3d vec = pos - roads.at(roadInd).pt1;
                 double scale = line.normalized().dot(vec)/line.norm();
-                if (((nodeLocations.row(toNode) - pos.transpose()).norm() < nodeDistThresh) || (scale < -0.1) || (scale > 1.1))
+                if (((nodeLocations.row(toNode) - pos.transpose()).norm() < nodeDistThresh) || (scale < -0.15) || (scale > 1.15))
                 {
                     // Determine possible next nodes
                     std::vector<int> nextNodes;

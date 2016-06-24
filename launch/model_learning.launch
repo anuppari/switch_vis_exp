@@ -7,7 +7,11 @@
     <arg name="streets" default="false" />
     <arg name="a" default="1.5" />
     <arg name="b" default="1.5" />
+<!--
     <arg name="x0" default="-1.0" />
+    <arg name="y0" default="0.0" />
+-->
+    <arg name="x0" default="-0.5" />
     <arg name="y0" default="0.0" />
     
     <node pkg="switch_vis_exp" type="model_learning_node" name="estimator" output="screen" >
