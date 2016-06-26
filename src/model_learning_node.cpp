@@ -182,6 +182,7 @@ class DataHandler
     ros::Timer watchdogTimer;
     ros::Timer switchingTimer;
     std::string markerID;
+    std::string imageName;
     bool artificialSwitching;
     std::vector<double> delTon;
     std::vector<double> delToff;
@@ -208,6 +209,7 @@ public:
     {
         ros::NodeHandle nhp("~");
         nhp.param<std::string>("markerID",markerID,"100");
+        nhp.param<std::string>("imageName", imageName, "image");
         nhp.param<bool>("artificialSwitching", artificialSwitching, false);
         nhp.param<bool>("streets", streets, false);
         std::vector<double> delTonDefault; delTonDefault.push_back(15.0); delTonDefault.push_back(30.0);
@@ -343,8 +345,8 @@ public:
         tf::StampedTransform tfCamPose;
         try
         {
-            tfl.waitForTransform("world","image",pose->header.stamp,ros::Duration(0.01));
-            tfl.lookupTransform("world","image",pose->header.stamp,tfCamPose);
+            tfl.waitForTransform("world",imageName,pose->header.stamp,ros::Duration(0.01));
+            tfl.lookupTransform("world",imageName,pose->header.stamp,tfCamPose);
         }
         catch(tf::TransformException ex) { std::cout << ex.what() << std::endl; return; }
         xCam << tfCamPose.getOrigin().getX(), tfCamPose.getOrigin().getY(), tfCamPose.getOrigin().getZ();
@@ -558,6 +560,9 @@ int main(int argc, char** argv)
     double visibilityTimeout = 0.06;
     bool artificialSwitching;
     nhp.param<bool>("artificialSwitching", artificialSwitching, false);
+    std::string imageName, targetName;
+    nhp.param<std::string>("imageName", imageName, "image");
+    nhp.param<std::string>("targetName", targetName, "ugv0");
     
     // Initialize Neural Network
     bool streets;
@@ -582,10 +587,10 @@ int main(int argc, char** argv)
     
     // Subscribers
     DataHandler callbacks(tfl, visibilityTimeout, intWindow, mu, cov);
-    ros::Subscriber camVelSub = nh.subscribe("image/body_vel",1,&DataHandler::camVelCB,&callbacks);
-    ros::Subscriber targetVelSub = nh.subscribe("ugv0/body_vel",1,&DataHandler::targetVelCB,&callbacks);
+    ros::Subscriber camVelSub = nh.subscribe(imageName+"/body_vel",1,&DataHandler::camVelCB,&callbacks);
+    ros::Subscriber targetVelSub = nh.subscribe(targetName+"/body_vel",1,&DataHandler::targetVelCB,&callbacks);
     ros::Subscriber targetPoseSub = nh.subscribe("markers",1,&DataHandler::targetPoseCB,&callbacks);
-    ros::Subscriber camPoseSub = nh.subscribe("image/pose",1,&DataHandler::camPoseCB,&callbacks);
+    ros::Subscriber camPoseSub = nh.subscribe(imageName+"/pose",1,&DataHandler::camPoseCB,&callbacks);
     
     // Generate pre-seed data
     //genData(x0, y0, mapWidth, mapHeight, mu, cov, fillAmount, etaStack, scriptFstack, scriptYstack);
@@ -640,8 +645,8 @@ int main(int argc, char** argv)
         tf::StampedTransform tfRelPose;
         try
         {
-            tfl.waitForTransform("image","ugv0",timeNowStamp,ros::Duration(0.01));
-            tfl.lookupTransform("image","ugv0",timeNowStamp,tfRelPose);
+            tfl.waitForTransform(imageName,targetName,timeNowStamp,ros::Duration(0.01));
+            tfl.lookupTransform(imageName,targetName,timeNowStamp,tfRelPose);
         }
         catch(tf::TransformException ex) { std::cout << ex.what() << std::endl; continue; }
         Eigen::Vector3d pos(tfRelPose.getOrigin().getX(),tfRelPose.getOrigin().getY(),tfRelPose.getOrigin().getZ());
@@ -700,7 +705,7 @@ int main(int argc, char** argv)
         
         // Publish tf
         tf::Transform tfT2C(tf::Quaternion(etaHat(3),etaHat(4),etaHat(5),etaHat(6)),tf::Vector3(etaHat(0),etaHat(1),etaHat(2)));
-        tfbr.sendTransform(tf::StampedTransform(tfT2C,ros::Time::now(),"image","ugv0estimate"));
+        tfbr.sendTransform(tf::StampedTransform(tfT2C,ros::Time::now(),imageName,targetName+"estimate"));
         
         // Publish
         switch_vis_exp::Output outMsg;

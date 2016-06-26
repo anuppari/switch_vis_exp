@@ -131,8 +131,8 @@ public:
             // Desired velocity
             tf::Vector3 desLinVel = kp*(desPos - bebopPoseTF.getOrigin()) + kpd*(targetLinVel - bebopLinVel);
             tf::Vector3 desAngVel = kw*((bebopPoseTF.getBasis()*tf::Vector3(1,0,0)).cross(desForward));
-            desBodyLinVel = bebopPoseTF.getBasis().inverse()*desLinVel + tf::Vector3(0,0.3*joyLinVel.getY(),0);
-            desBodyAngVel = bebopPoseTF.getBasis().inverse()*desAngVel + tf::Vector3(0,0,-0.5*joyLinVel.getY());
+            desBodyLinVel = bebopPoseTF.getBasis().inverse()*desLinVel + tf::Vector3(0,0.4*joyAngVel.getZ(),0);
+            desBodyAngVel = bebopPoseTF.getBasis().inverse()*desAngVel + tf::Vector3(0,0,-0.5*joyAngVel.getZ());
         }
         else
         {

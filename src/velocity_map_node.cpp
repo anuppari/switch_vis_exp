@@ -33,6 +33,7 @@ class velocity_map
     double nodeDistThresh;
     int n;          // sharpness and squareness of track
     bool doRotation;
+    bool allowBacktrack;
     double speed;
     
     // graph parameters
@@ -60,6 +61,7 @@ public:
         nhp.param<int>("n",n,4);
         nhp.param<bool>("doRotation",doRotation,false);
         nhp.param<bool>("streets",streets,false);
+        nhp.param<bool>("allowBacktrack",allowBacktrack,false);
         
         // graph
         std::srand(ros::Time::now().nsec);
@@ -202,7 +204,7 @@ public:
                     std::vector<int> nextNodes;
                     for (int j = 0; j < numNodes; j++)
                     {
-                        if (adjMat(toNode,j) && (j != toNode) && (j != fromNode))
+                        if (adjMat(toNode,j) && (j != toNode) && ((j != fromNode) || allowBacktrack))
                         {
                             nextNodes.push_back(j);
                         }

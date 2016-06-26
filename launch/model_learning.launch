@@ -5,6 +5,7 @@
     <arg name="recordData" default="false" /> <!-- record to rosbag -->
     <arg name="artificialSwitching" default="false" />
     <arg name="streets" default="false" />
+    <arg name="imageName" default="image" />
     <arg name="a" default="1.5" />
     <arg name="b" default="1.5" />
 <!--
@@ -21,6 +22,7 @@
       <param name="x0" value="$(arg x0)" />
       <param name="y0" value="$(arg y0)" />
       <param name="streets" value="$(arg streets)" />
+      <param name="imageName" value="$(arg imageName)" />
     </node>
     
     <group if="$(arg sim)" >
