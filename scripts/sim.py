@@ -34,7 +34,7 @@ nextNode = -1
 def sim():
     global t, pose, camInfoMsg, nodeLocations
     global centerPub, targetVelPub, camVelPub, camInfoPub, br, tfl, posePub, getMapVel
-    global switchTimer, imageTimer, estimatorOn, streets
+    global switchTimer, imageTimer, estimatorOn, streets, latestJoyMsg
     
     rospy.init_node("sim")
     estimatorOn = True
@@ -87,6 +87,7 @@ def sim():
     targetPos = np.array([0.2,.1,0])
     targetOrient = np.array([0,0,0,1])
     pose = np.concatenate((camPos,camOrient,targetPos,targetOrient))
+    latestJoyMsg = Joy(axes=[0,0,0,0,0,0,0,0],buttons=[0,0,0,0,0,0,0,0,0,0,0])
     
     r = rospy.Rate(intRate)
     h = 1.0/intRate
@@ -232,7 +233,7 @@ def joyCB(joyData):
 
 
 def velocities(t):
-    global pose, prevNode, nextNode
+    global pose, prevNode, nextNode, latestJoyMsg
     
     lenT = t.size
     
@@ -261,13 +262,8 @@ def velocities(t):
     vp = rotateVec(np.array([twistMsg.linear.x,twistMsg.linear.y,twistMsg.linear.z]),qInv(targetOrient))
     vp[1:] = 0
     wp = rotateVec(np.array([twistMsg.angular.x,twistMsg.angular.y,twistMsg.angular.z]),qInv(targetOrient))
-    vc = np.array([0,0,0])
-    wc = np.array([0,0,0])
-    
-    #vc = np.array([0,0,0])
-    #wc = np.array([0,0,0])
-    #vp = np.array([joyData.axes[1],0,0])
-    #wp = np.array([0,0,joyData.axes[0]])
+    vc = np.array([-1*latestJoyMsg.axes[0],-1*latestJoyMsg.axes[1],latestJoyMsg.buttons[10]-latestJoyMsg.buttons[9]])
+    wc = np.array([-1*latestJoyMsg.axes[4],latestJoyMsg.axes[3],(1-latestJoyMsg.axes[5])-(1-latestJoyMsg.axes[2])])
     
     ## camera velocities, expressed in camera coordinates
     #vc = 0.3*np.array([np.sin(3*t),np.cos(4*t),0])
