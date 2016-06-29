@@ -3,7 +3,7 @@
 <launch>
     <arg name="sim" default="true" />
     <arg name="recordData" default="false" /> <!-- record to rosbag -->
-    <arg name="artificialSwitching" default="false" />
+    <arg name="artificialSwitching" default="true" />
     <arg name="streets" default="false" />
     <arg name="imageName" default="image" />
     <arg name="a" default="1.5" />
@@ -26,7 +26,7 @@
     </node>
     
     <group if="$(arg sim)" >
-        <node pkg="switch_vis_exp" type="sim.py" name="sim" output="screen">
+        <node pkg="switch_vis_exp" type="sim_node" name="sim" output="screen">
           <param name="streets" value="$(arg streets)" />
         </node>
         <node pkg="rviz" type="rviz" name="rviz" />
@@ -38,7 +38,7 @@
           <param name="y0" value="$(arg y0)" /> <!-- track center -->
           <param name="k1" value="0.5" />
           <param name="k2" value="0.5" />
-          <param name="doRotation" value="true" />
+          <param name="doRotation" value="false" />
           <param name="streets" value="$(arg streets)" />
         </node>
     </group>
@@ -56,6 +56,6 @@
     
     <!-- joystick -->
     <node pkg="joy" type="joy_node" name="joy_node">
-      <param name="dev" value="/dev/input/js0"/>
+      <param name="dev" value="/dev/input/js1"/>
     </node>
 </launch>

@@ -20,8 +20,8 @@ camMat = np.array([[558.953280,0.000000,365.566775],[0.000000,557.877582,240.157
 #distCoeffs = np.array([-0.385156,0.163233,0.000539,0.000302,0.000000])
 #camMat = np.eye(3)
 distCoeffs = np.zeros(5)
-intRate = 200 # [hz] integration rate
-velRate = 200 # [hz] velocity data publish rate
+intRate = 300 # [hz] integration rate
+velRate = 300 # [hz] velocity data publish rate
 frameRate = 60 # [hz] marker publish rate
 onDuration = np.array([3,5])
 offDuration = np.array([1,4])
@@ -73,15 +73,15 @@ def sim():
         nodeLocations = np.array([[pt.x,pt.y] for pt in resp.nodes])
     
     # Publishers
-    #rospy.Timer(rospy.Duration(1.0/velRate),velPubCB)
+    rospy.Timer(rospy.Duration(1.0/velRate),velPubCB)
     imageTimer = rospy.Timer(rospy.Duration(1.0/frameRate),imagePubCB)
     #rospy.Timer(rospy.Duration(0.5),camInfoPubCB)
-    switchTimer = rospy.Timer(rospy.Duration(150.0),switchCB,oneshot=True)
+    switchTimer = rospy.Timer(rospy.Duration(100.0),switchCB,oneshot=True)
     
     # Initial conditions
     startTime = rospy.get_time()
     camPos = np.array([0,-1,1.5])
-    camOrient = np.array([-1*np.sqrt(2)/2,0,0,np.sqrt(2)/2])
+    camOrient = np.array([1,0,0,0])
     #camPos = np.array([0,0,0])
     #camOrient = np.array([0,0,0,1])
     targetPos = np.array([0.2,.1,0])
@@ -262,8 +262,10 @@ def velocities(t):
     vp = rotateVec(np.array([twistMsg.linear.x,twistMsg.linear.y,twistMsg.linear.z]),qInv(targetOrient))
     vp[1:] = 0
     wp = rotateVec(np.array([twistMsg.angular.x,twistMsg.angular.y,twistMsg.angular.z]),qInv(targetOrient))
-    vc = np.array([-1*latestJoyMsg.axes[0],-1*latestJoyMsg.axes[1],latestJoyMsg.buttons[10]-latestJoyMsg.buttons[9]])
-    wc = np.array([-1*latestJoyMsg.axes[4],latestJoyMsg.axes[3],(1-latestJoyMsg.axes[5])-(1-latestJoyMsg.axes[2])])
+    #vc = np.array([-1*latestJoyMsg.axes[0],-1*latestJoyMsg.axes[1],latestJoyMsg.buttons[10]-latestJoyMsg.buttons[9]])
+    #wc = np.array([-1*latestJoyMsg.axes[4],latestJoyMsg.axes[3],(1-latestJoyMsg.axes[5])-(1-latestJoyMsg.axes[2])])
+    vc = np.array([np.sin(0.5*t),np.cos(0.3*t),0])
+    wc = np.array([0,0,0.0])
     
     ## camera velocities, expressed in camera coordinates
     #vc = 0.3*np.array([np.sin(3*t),np.cos(4*t),0])
