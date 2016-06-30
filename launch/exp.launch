@@ -3,15 +3,17 @@
 <launch>
   <arg name="drive" default="true" />
   <arg name="streets" default="true" />
+  <arg name="streetMultiBot" default="true" />
   <arg name="a" default="1.5" /> <!-- track width -->
-  <arg name="b" default="1.5" /> <!-- track height -->
-  <arg name="x0" default="-1.0" /> <!-- track center -->
+  <arg name="b" default="1.15" /> <!-- track height -->
+  <arg name="x0" default="0.25" /> <!-- track center -->
   <arg name="y0" default="0.0" /> <!-- track center -->
   
   <!-- Setup -->
   <include file="$(find switch_vis_exp)/launch/setup.launch" >
     <arg name="drive" value="$(arg drive)" />
     <arg name="streets" value="$(arg streets)" />
+    <arg name="streetMultiBot" value="$(arg streetMultiBot)" />
     <arg name="a" value="$(arg a)" /> <!-- track width -->
     <arg name="b" value="$(arg b)" /> <!-- track height -->
     <arg name="x0" value="$(arg x0)" /> <!-- track center -->
@@ -27,8 +29,10 @@
     <arg name="y0" value="$(arg y0)" /> <!-- track center -->
     <arg name="sim" value="false" />
     <arg name="artificialSwitching" value="false" />
+    <arg name="joySwitching" value="false" />
     <arg name="recordData" value="false" />
     <arg name="streets" value="$(arg streets)" />
+    <arg name="streetMultiBot" value="$(arg streetMultiBot)" />
     <arg name="imageName" value="bebop_image" />
   </include>
 <!--

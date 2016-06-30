@@ -50,6 +50,7 @@
   <!-- Camera velocity from mocap filter node (backwards difference of pose) -->
   <!-- <node pkg="switch_vis_exp" type="filter_node" name="image_vel_filter" ns="image" output="screen" /> -->
   <node pkg="switch_vis_exp" type="filter_node" name="bebop_vel_filter" ns="bebop" output="screen" />
+  <node pkg="switch_vis_exp" type="filter_node" name="bebop_vel_filter" ns="bebop_image" output="screen" />
   
   <!-- Turtlebot velocity from mocap filter node (backwards difference of pose) -->
   <node pkg="switch_vis_exp" type="filter_node" name="turtlebot_vel_filter0" ns="ugv0" output="screen" />

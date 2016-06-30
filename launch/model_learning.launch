@@ -4,7 +4,9 @@
     <arg name="sim" default="true" />
     <arg name="recordData" default="false" /> <!-- record to rosbag -->
     <arg name="artificialSwitching" default="true" />
+    <arg name="joySwitching" default="false" />
     <arg name="streets" default="false" />
+    <arg name="streetMultiBot" default="false" />
     <arg name="imageName" default="image" />
     <arg name="a" default="1.5" />
     <arg name="b" default="1.5" />
@@ -17,12 +19,28 @@
     
     <node pkg="switch_vis_exp" type="model_learning_node" name="estimator" output="screen" >
       <param name="artificialSwitching" value="$(arg artificialSwitching)" />
+      <param name="joySwitching" value="$(arg joySwitching)" />
+      <param name="streetMultiBot" value="$(arg streetMultiBot)" />
       <param name="a" value="$(arg a)" />
       <param name="b" value="$(arg b)" />
       <param name="x0" value="$(arg x0)" />
       <param name="y0" value="$(arg y0)" />
       <param name="streets" value="$(arg streets)" />
       <param name="imageName" value="$(arg imageName)" />
+    </node>
+    
+    <node pkg="switch_vis_exp" type="model_learning_node" name="estimator2" if="$(arg streetMultiBot)" output="screen" >
+      <param name="artificialSwitching" value="$(arg artificialSwitching)" />
+      <param name="joySwitching" value="$(arg joySwitching)" />
+      <param name="streetMultiBot" value="$(arg streetMultiBot)" />
+      <param name="a" value="$(arg a)" />
+      <param name="b" value="$(arg b)" />
+      <param name="x0" value="$(arg x0)" />
+      <param name="y0" value="$(arg y0)" />
+      <param name="streets" value="$(arg streets)" />
+      <param name="imageName" value="$(arg imageName)" />
+      <param name="targetName" value="ugv1" />
+      <param name="markerID" value="200" type="str" />
     </node>
     
     <group if="$(arg sim)" >

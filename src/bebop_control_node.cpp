@@ -18,7 +18,7 @@ class bebop_control
     ros::Subscriber joySub;
     ros::Subscriber poseSub;
     ros::Subscriber bebopVelSub;
-    ros::Subscriber targetVelSub;
+    ros::Subscriber target1VelSub, target2VelSub;
     tf::TransformListener tfl;
     
     // Parameters
@@ -77,7 +77,8 @@ public:
         joySub = nh.subscribe("joy",1,&bebop_control::joyCB,this);
         poseSub = nh.subscribe("bebop/pose",1,&bebop_control::poseCB,this);
         bebopVelSub = nh.subscribe("bebop/vel",1,&bebop_control::bebopVelCB,this);
-        targetVelSub = nh.subscribe("ugv0/vel",1,&bebop_control::targetVelCB,this);
+        target1VelSub = nh.subscribe("ugv0/vel",1,&bebop_control::targetVelCB,this);
+        target2VelSub = nh.subscribe("ugv1/vel",1,&bebop_control::targetVelCB,this);
         
         // Warning message
         while (!(ros::isShuttingDown()) and (!mocapOn or !bebopVelOn or !targetVelOn))
@@ -172,9 +173,12 @@ public:
             targetVelOn = true;
         }
         
-        // Measurements
-        targetLinVel =  tf::Vector3(twist->twist.linear.x,twist->twist.linear.y,twist->twist.linear.z);
-        targetAngVel =  tf::Vector3(twist->twist.angular.x,twist->twist.angular.y,twist->twist.angular.z);
+        if (twist->header.frame_id == target)
+        {
+            // Measurements
+            targetLinVel =  tf::Vector3(twist->twist.linear.x,twist->twist.linear.y,twist->twist.linear.z);
+            targetAngVel =  tf::Vector3(twist->twist.angular.x,twist->twist.angular.y,twist->twist.angular.z);
+        }
     }
     
     void joyCB(const sensor_msgs::JoyConstPtr& joyMsg)
@@ -197,7 +201,17 @@ public:
             joyLinVel = tf::Vector3(joy_deadband(joyMsg->axes[4]), joy_deadband(joyMsg->axes[3]), joy_deadband(joyMsg->axes[1]));
             joyAngVel = tf::Vector3(0,0, joy_deadband(joyMsg->axes[0]));
             
-            if (joyMsg->buttons[4]) { autonomy = true; } // LB - autonomy
+             // autonomy
+            if (joyMsg->buttons[4]) // LB - UGV0
+            {
+                target = "ugv0";
+                autonomy = true;
+            }
+            else if (joyMsg->buttons[5]) // RB - UGV0
+            {
+                target = "ugv1";
+                autonomy = true;
+            }
         }
     }
     

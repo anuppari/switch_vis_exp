@@ -64,6 +64,7 @@ add_service_files(
   FILES
   MapVel.srv
   RoadMap.srv
+  CLdata.srv
 )
 
 ## Generate actions in the 'action' folder

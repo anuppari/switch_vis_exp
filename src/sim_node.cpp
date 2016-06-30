@@ -22,6 +22,7 @@ class Sim
 {
     ros::NodeHandle nh;
     ros::Publisher targetVelPub;
+    ros::Publisher targetVelPub2;
     ros::Publisher targetOdomPub;
     ros::Publisher camVelPub;
     ros::Publisher featurePub;
@@ -37,12 +38,14 @@ class Sim
     // Parameters
     double intTime;
     int markerID;
+    int markerID2;
     cv::Mat camMat;
     cv::Mat distCoeffs;
     double radius;
     double period;
     std::string cameraName;
     std::string targetName;
+    std::string targetName2;
     double startTime;
     
     // States
@@ -50,13 +53,18 @@ class Sim
     Eigen::Quaterniond camOrient;
     Eigen::Vector3d targetPos;
     Eigen::Quaterniond targetOrient;
+    Eigen::Vector3d targetPos2;
+    Eigen::Quaterniond targetOrient2;
     bool useVelocityMap;
     bool driveCircle;
     Eigen::Vector3d camLinVel; // expressed in body coordinate system
     Eigen::Vector3d camAngVel; // expressed in body coordinate system
     Eigen::Vector3d targetLinVel; // expressed in body coordinate system
     Eigen::Vector3d targetAngVel; // expressed in body coordinate system
+    Eigen::Vector3d targetLinVel2; // expressed in body coordinate system
+    Eigen::Vector3d targetAngVel2; // expressed in body coordinate system
     int fromNode, toNode;
+    int fromNode2, toNode2;
     
 public:
     Sim()
@@ -65,10 +73,12 @@ public:
         ros::NodeHandle nhp("~");
         nhp.param<std::string>("cameraName",cameraName,"camera");
         nhp.param<std::string>("targetName",targetName,"ugv0");
+        nhp.param<std::string>("targetName2",targetName2,"ugv1");
         
         // Publishers
         camVelPub = nh.advertise<geometry_msgs::TwistStamped>("image/body_vel",10);
         targetVelPub = nh.advertise<geometry_msgs::TwistStamped>(targetName+"/body_vel",10);
+        targetVelPub2 = nh.advertise<geometry_msgs::TwistStamped>(targetName2+"/body_vel",10);
         targetOdomPub = nh.advertise<nav_msgs::Odometry>(targetName+"/odom",10);
         featurePub = nh.advertise<aruco_ros::Center>("markerCenters",10);
         posePub = nh.advertise<geometry_msgs::PoseStamped>("markers",10);
@@ -85,15 +95,21 @@ public:
         camOrient = Eigen::Quaterniond(0,1,0,0);
         targetPos = Eigen::Vector3d(0.2,0.1,0);
         targetOrient = Eigen::Quaterniond::Identity();
+        targetPos2 = Eigen::Vector3d(0.1,0.3,0);
+        targetOrient2 = Eigen::Quaterniond::Identity();
         camLinVel = Eigen::Vector3d::Zero();
         camAngVel = Eigen::Vector3d::Zero();
         targetLinVel = Eigen::Vector3d::Zero();
         targetAngVel = Eigen::Vector3d::Zero();
+        targetLinVel2 = Eigen::Vector3d::Zero();
+        targetAngVel2 = Eigen::Vector3d::Zero();
         fromNode = -1; toNode = -1;
+        fromNode2 = -1; toNode2 = -1;
         
         // Initialize Parameters
         intTime = 1.0/300.0;
         markerID = 100;
+        markerID2 = 200;
         radius = 2;
         period = 30;
         startTime = ros::Time::now().toSec();
@@ -139,6 +155,13 @@ public:
         targetOrient = Eigen::Quaterniond(targetOrientTemp(0),targetOrientTemp(1),targetOrientTemp(2),targetOrientTemp(3));
         targetOrient.normalize();
         
+        // Integrate target2 pose
+        targetPos2 += targetOrient2*targetLinVel2*intTime; // convert from body to world and integrate
+        Eigen::Vector4d targetOrientTemp2(targetOrient2.w(),targetOrient2.x(),targetOrient2.y(),targetOrient2.z());
+        targetOrientTemp2 += 0.5*diffMat(targetOrient2)*targetAngVel2*intTime;
+        targetOrient2 = Eigen::Quaterniond(targetOrientTemp2(0),targetOrientTemp2(1),targetOrientTemp2(2),targetOrientTemp2(3));
+        targetOrient2.normalize();
+        
         // Publish camera tf
         tf::Transform camTransform;
         camTransform.setOrigin(tf::Vector3(camPos(0),camPos(1),camPos(2)));
@@ -151,6 +174,13 @@ public:
         targetTransform.setRotation(tf::Quaternion(targetOrient.x(),targetOrient.y(),targetOrient.z(),targetOrient.w()));
         tfbr.sendTransform(tf::StampedTransform(targetTransform,ros::Time::now(),"world",targetName));
         tfbr.sendTransform(tf::StampedTransform(targetTransform,ros::Time::now(),targetName+"/odom",targetName+"/base_footprint"));
+        
+        // Publish target2 tf
+        tf::Transform targetTransform2;
+        targetTransform2.setOrigin(tf::Vector3(targetPos2(0),targetPos2(1),targetPos2(2)));
+        targetTransform2.setRotation(tf::Quaternion(targetOrient2.x(),targetOrient2.y(),targetOrient2.z(),targetOrient2.w()));
+        tfbr.sendTransform(tf::StampedTransform(targetTransform2,ros::Time::now(),"world",targetName2));
+        //tfbr.sendTransform(tf::StampedTransform(targetTransform2,ros::Time::now(),targetName2+"/odom",targetName2+"/base_footprint"));
         
         // Publish marker tf for dead reckoning
         tf::Transform tfMarker2Cam;
@@ -191,6 +221,16 @@ public:
         twistMsg.twist.angular.z = targetAngVel(2);
         targetVelPub.publish(twistMsg);
         
+        // Publish target velocities
+        if (useVelocityMap) {get_target_velocity_from_map();}
+        twistMsg.twist.linear.x = targetLinVel2(0);
+        twistMsg.twist.linear.y = targetLinVel2(1);
+        twistMsg.twist.linear.z = targetLinVel2(2);
+        twistMsg.twist.angular.x = targetAngVel2(0);
+        twistMsg.twist.angular.y = targetAngVel2(1);
+        twistMsg.twist.angular.z = targetAngVel2(2);
+        targetVelPub.publish(twistMsg);
+        
         // Publish target Odometry
         nav_msgs::Odometry odomMsg;
         odomMsg.header.stamp = ros::Time::now();
@@ -214,6 +254,10 @@ public:
         Eigen::Vector3d t2cPos = camOrient.inverse()*(targetPos - camPos);
         Eigen::Quaterniond t2cQuat = camOrient.inverse()*targetOrient;
         
+        // Target2 w.r.t. camera
+        Eigen::Vector3d t2cPos2 = camOrient.inverse()*(targetPos2 - camPos);
+        Eigen::Quaterniond t2cQuat2 = camOrient.inverse()*targetOrient2;
+        
         // Convert to OpenCV
         cv::Mat t2cPosCV;
         cv::eigen2cv((Eigen::MatrixXd) t2cPos.transpose(),t2cPosCV);
@@ -227,6 +271,8 @@ public:
         msg.header.stamp = ros::Time::now();
         char buf[10];
         std::sprintf(buf,"%d",markerID);
+        char buf2[10];
+        std::sprintf(buf2,"%d",markerID2);
         msg.header.frame_id = buf;
         msg.x = imagePoint.at<double>(0);
         msg.y = imagePoint.at<double>(1);
@@ -244,6 +290,19 @@ public:
         poseMsg.pose.orientation.z = t2cQuat.z();
         poseMsg.pose.orientation.w = t2cQuat.w();
         posePub.publish(poseMsg);
+        
+        // Publish relative pose2
+        geometry_msgs::PoseStamped poseMsg2;
+        poseMsg2.header.stamp = ros::Time::now();
+        poseMsg2.header.frame_id = buf2;
+        poseMsg2.pose.position.x = t2cPos2(0);
+        poseMsg2.pose.position.y = t2cPos2(1);
+        poseMsg2.pose.position.z = t2cPos2(2);
+        poseMsg2.pose.orientation.x = t2cQuat2.x();
+        poseMsg2.pose.orientation.y = t2cQuat2.y();
+        poseMsg2.pose.orientation.z = t2cQuat2.z();
+        poseMsg2.pose.orientation.w = t2cQuat2.w();
+        posePub.publish(poseMsg2);
     }
     
     void get_target_velocity_from_map()
@@ -263,11 +322,27 @@ public:
         srv.request.pose.push_back(poseMsg);
         srv.request.fromNode.push_back(fromNode);
         srv.request.toNode.push_back(toNode);
+        
+        // Construct request2
+        geometry_msgs::Pose poseMsg2;
+        poseMsg2.position.x = targetPos2(0);
+        poseMsg2.position.y = targetPos2(1);
+        poseMsg2.position.z = targetPos2(2);
+        poseMsg2.orientation.x = targetOrient2.x();
+        poseMsg2.orientation.y = targetOrient2.y();
+        poseMsg2.orientation.z = targetOrient2.z();
+        poseMsg2.orientation.w = targetOrient2.w();
+        srv.request.pose.push_back(poseMsg2);
+        srv.request.fromNode.push_back(fromNode2);
+        srv.request.toNode.push_back(toNode2);
+        
         if (velocityMapClient.call(srv))
         {
             // streets
             fromNode = srv.response.fromNode.at(0);
             toNode = srv.response.toNode.at(0);
+            fromNode2 = srv.response.fromNode.at(1);
+            toNode2 = srv.response.toNode.at(1);
             
             // get velocity
             Eigen::Vector3d des_lin_vel;
@@ -275,9 +350,17 @@ public:
             des_lin_vel << srv.response.twist.at(0).linear.x, srv.response.twist.at(0).linear.y, srv.response.twist.at(0).linear.z;
             des_ang_vel << srv.response.twist.at(0).angular.x, srv.response.twist.at(0).angular.y, srv.response.twist.at(0).angular.z;
             
+            // get velocity2
+            Eigen::Vector3d des_lin_vel2;
+            Eigen::Vector3d des_ang_vel2;
+            des_lin_vel2 << srv.response.twist.at(1).linear.x, srv.response.twist.at(1).linear.y, srv.response.twist.at(1).linear.z;
+            des_ang_vel2 << srv.response.twist.at(1).angular.x, srv.response.twist.at(1).angular.y, srv.response.twist.at(1).angular.z;
+            
             // rotate velocity into target body frame
             targetLinVel = targetOrient.inverse()*des_lin_vel;
             targetAngVel = targetOrient.inverse()*des_ang_vel;
+            targetLinVel2 = targetOrient2.inverse()*des_lin_vel2;
+            targetAngVel2 = targetOrient2.inverse()*des_ang_vel2;
         }
     }
     
@@ -287,7 +370,7 @@ public:
         //{
             //useVelocityMap = true;
             //driveCircle = false;
-            ///*
+            //
             //radius += 0.1*(joyMsg->buttons[12]-joyMsg->buttons[11]);
             //period -= 10*(joyMsg->buttons[13]-joyMsg->buttons[14]);
             //targetAngVel << 0, 0, 2*M_PI/period;
