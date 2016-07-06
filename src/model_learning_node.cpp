@@ -191,12 +191,15 @@ class DataHandler
     std::vector<double> delToff;
     int joySwitchButton;
     int dataTransferButton;
+    bool joyEstimatorOn;
     
     // data transfer
     ros::ServiceServer service;
     const Eigen::VectorXd *etaStack;
     const Eigen::VectorXd *scriptFstack;
     const Eigen::MatrixXd *scriptYstack;
+    const Eigen::MatrixXd *term1;
+    const Eigen::MatrixXd *term2;
     
 public:
     Eigen::Vector3d vCc;
@@ -216,7 +219,7 @@ public:
     Eigen::Matrix<double, 7, 1> scriptF;
     Eigen::MatrixXd scriptY;
     
-    DataHandler(tf::TransformListener& tflIn, double visibilityTimeout, double intWindowIn, const Eigen::MatrixXd& muIn, const Eigen::MatrixXd& covIn, const Eigen::VectorXd& etaStackIn, const Eigen::VectorXd& scriptFstackIn, const Eigen::MatrixXd& scriptYstackIn) : tfl(tflIn)
+    DataHandler(tf::TransformListener& tflIn, double visibilityTimeout, double intWindowIn, const Eigen::MatrixXd& muIn, const Eigen::MatrixXd& covIn, const Eigen::VectorXd& etaStackIn, const Eigen::VectorXd& scriptFstackIn, const Eigen::MatrixXd& scriptYstackIn, const Eigen::MatrixXd& term1in, const Eigen::MatrixXd& term2in) : tfl(tflIn)
     {
         ros::NodeHandle nhp("~");
         nhp.param<std::string>("markerID",markerID,"100");
@@ -233,13 +236,13 @@ public:
         
         if (targetName == "ugv0")
         {
-            joySwitchButton = 5;
-            dataTransferButton = 11;
+            joySwitchButton = 4; // LB
+            dataTransferButton = 11; // Left D-pad
         }
         else
         {
-            joySwitchButton = 4;
-            dataTransferButton = 12;
+            joySwitchButton = 5; // RB
+            dataTransferButton = 12; // Right D-pad
         }
         
         std::cout << "delTon: " << delTon.at(0) << " " << delTon.at(1) << std::endl;
@@ -249,9 +252,12 @@ public:
         mu = muIn;
         cov = covIn;
         gotData = false;
+        transferData = false;
         etaStack = &etaStackIn;
         scriptFstack = &scriptFstackIn;
         scriptYstack = &scriptYstackIn;
+        term1 = &term1in;
+        term2 = &term2in;
         
         // Initialize
         vCc << 0,0,0;
@@ -271,11 +277,7 @@ public:
         if (artificialSwitching)
         {
             estimatorOn = true;
-            switchingTimer = nh.createTimer(ros::Duration(15.0),&DataHandler::switchingTimerCB,this,true);
-        }
-        else if (joySwitching)
-        {
-            estimatorOn = false;
+            switchingTimer = nh.createTimer(ros::Duration(100.0),&DataHandler::switchingTimerCB,this,true);
         }
         else
         {
@@ -283,6 +285,7 @@ public:
             watchdogTimer = nh.createTimer(ros::Duration(visibilityTimeout),&DataHandler::timeout,this,true);
             watchdogTimer.stop(); // Dont start watchdog until feature first visible
             estimatorOn = false;
+            joyEstimatorOn = false;
         }
     }
     
@@ -298,14 +301,14 @@ public:
         std::default_random_engine generator(std::rand());
         if (estimatorOn)
         {
-            std::cout << "artificial switching: predictor" << std::endl;
+            std::cout << targetName+": artificial switching: predictor" << std::endl;
             std::uniform_real_distribution<double> distribution(delToff.at(0),delToff.at(1));
             estimatorOn = false;
             switchingTimer = nh.createTimer(ros::Duration(distribution(generator)),&DataHandler::switchingTimerCB,this,true);
         }
         else
         {
-            std::cout << "artificial switching: estimator" << std::endl;
+            std::cout << targetName+": artificial switching: estimator" << std::endl;
                 
             // Flush integration buffers
             tBuff.clear();
@@ -343,15 +346,23 @@ public:
     
     void joyCB(const sensor_msgs::JoyConstPtr& joyMsg)
     {
-        if (joySwitching) { estimatorOn = (bool) joyMsg->buttons[joySwitchButton]; } // RB
+        if (joySwitching)
+        {
+            joyEstimatorOn = (bool) joyMsg->buttons[joySwitchButton];
+            estimatorOn &= joyEstimatorOn;
+        }
         transferData = (bool) joyMsg->buttons[dataTransferButton];
     }
     
     bool transfer_data(switch_vis_exp::CLdata::Request &req,switch_vis_exp::CLdata::Response &resp)
     {
+        //std::cout << targetName+": sent data. Ystack:" << std::endl << *scriptYstack << std::endl;
+        std::cout << targetName+" sent data" << std::endl;
         resp.etaStack = std::vector<double>(etaStack->data(), etaStack->data() + etaStack->size());
         resp.scriptFstack = std::vector<double>(scriptFstack->data(), scriptFstack->data() + scriptFstack->size());
         resp.scriptYstack = std::vector<double>(scriptYstack->data(), scriptYstack->data() + scriptYstack->size());
+        resp.term1 = std::vector<double>(term1->data(), term1->data() + term1->size());
+        resp.term2 = std::vector<double>(term2->data(), term2->data() + term2->size());
         
         //resp.etaStack.resize(etaStack->size());
         //Eigen::VectorXd::Map(&resp.etaStack[0],etaStack->size()) = *etaStack;
@@ -371,24 +382,26 @@ public:
         if (markerID.compare(pose->header.frame_id) != 0) { return; }
         
         // Switching
-        if (artificialSwitching or joySwitching)
+        if (artificialSwitching)
         {
             if (!estimatorOn) { return; }
         }
-        else
+        else if (joySwitching)
         {
-            // Feature in FOV, pause watchdog timer
-            watchdogTimer.stop();
-            if (!estimatorOn)
-            {
-                std::cout << targetName+" watchdog: estimator" << std::endl;
-                
-                // Flush integration buffers
-                tBuff.clear();
-                etaBuff.clear();
-                fBuff.clear();
-                sigmaBuff.clear();
-            }
+            if (!joyEstimatorOn) { return; }
+        }
+        
+        // Feature in FOV, pause watchdog timer
+        if(!artificialSwitching) { watchdogTimer.stop(); }
+        if (!estimatorOn)
+        {
+            std::cout << targetName+" watchdog: estimator" << std::endl;
+            
+            // Flush integration buffers
+            tBuff.clear();
+            etaBuff.clear();
+            fBuff.clear();
+            sigmaBuff.clear();
         }
         
         // get pose data
@@ -405,7 +418,7 @@ public:
             tfl.waitForTransform("world",imageName,pose->header.stamp,ros::Duration(0.01));
             tfl.lookupTransform("world",imageName,pose->header.stamp,tfCamPose);
         }
-        catch(tf::TransformException ex) { std::cout << ex.what() << std::endl; return; }
+        catch(tf::TransformException ex) { /* std::cout << ex.what() << std::endl; */ return; }
         xCam << tfCamPose.getOrigin().getX(), tfCamPose.getOrigin().getY(), tfCamPose.getOrigin().getZ();
         qCam = continuousQuat(qCam,Eigen::Quaterniond(tfCamPose.getRotation().getW(), tfCamPose.getRotation().getX(), tfCamPose.getRotation().getY(), tfCamPose.getRotation().getZ()));
         //qCam.normalize();
@@ -428,7 +441,7 @@ public:
         scriptF = trapz(tBuff,fBuff);
         scriptY = trapz(tBuff,sigmaBuff);
         
-        if (!(artificialSwitching or joySwitching))
+        if (!artificialSwitching)
         {
             // Restart watchdog timer for feature visibility check
             watchdogTimer.start();
@@ -542,15 +555,23 @@ int initNN(bool streets, Eigen::MatrixXd& cov, Eigen::MatrixXd& mu)
             Eigen::Vector3d pt2(srv.response.pt2.at(i).x,srv.response.pt2.at(i).y,srv.response.pt2.at(i).z);
             Eigen::Vector3d line = pt2 - pt1;
             
+            // Kernals along street
             int numNewKernals = (int) std::round(line.norm()/kernalSeparation);
             double angle = std::fmod(std::atan2(line(1),line(0)) + 2*PI,2*PI); // [0,2*pi]
+            double reverseAngle = std::fmod(angle+PI,2*PI);
             for (int j = 1; j < numNewKernals; j++)
             {
                 double actualKernalSeparation = line.norm()/numNewKernals;
                 Eigen::Vector3d newPt = pt1 + j*actualKernalSeparation*line.normalized();
                 MUs.push_back(Eigen::Vector3d(newPt(0),newPt(1),angle));
-                MUs.push_back(Eigen::Vector3d(newPt(0),newPt(1),std::fmod(angle+PI,2*PI)));
+                MUs.push_back(Eigen::Vector3d(newPt(0),newPt(1),reverseAngle));
             }
+            
+            // Kernals at nodes
+            MUs.push_back(Eigen::Vector3d(pt1(0),pt1(1),angle));
+            MUs.push_back(Eigen::Vector3d(pt1(0),pt1(1),reverseAngle));
+            MUs.push_back(Eigen::Vector3d(pt2(0),pt2(1),angle));
+            MUs.push_back(Eigen::Vector3d(pt2(0),pt2(1),reverseAngle));
         }
         mu.resize(MUs.size(),3);// Nx3
         numKernal = mu.rows();
@@ -558,7 +579,6 @@ int initNN(bool streets, Eigen::MatrixXd& cov, Eigen::MatrixXd& mu)
         {
             mu.row(i) = MUs.at(i).transpose();
         }
-        
         
         Eigen::MatrixXd muTemp = Eigen::MatrixXd::Zero(mu.rows(),4);
         muTemp.col(0) = Eigen::VectorXd::LinSpaced(mu.rows(),0,mu.rows()-1);
@@ -688,6 +708,8 @@ int main(int argc, char** argv)
     Eigen::VectorXd etaStack = Eigen::VectorXd::Zero(7*CLstackSize);
     Eigen::VectorXd scriptFstack = Eigen::VectorXd::Zero(7*CLstackSize);
     Eigen::MatrixXd scriptYstack = Eigen::MatrixXd::Zero(7*CLstackSize,6*numKernal);
+    Eigen::MatrixXd term1 = scriptYstack.transpose()*(etaStack - scriptFstack);
+    Eigen::MatrixXd term2 = -1*scriptYstack.transpose()*scriptYstack;
     int fillAmount = 0;
     Eigen::Matrix<double,7,1> scriptEta = Eigen::Matrix<double,7,1>::Zero();
     Eigen::Matrix<double,7,1> scriptF = Eigen::Matrix<double,7,1>::Zero();
@@ -696,10 +718,10 @@ int main(int argc, char** argv)
     std::srand(ros::Time::now().nsec);
     
     // Publisher
-    ros::Publisher outputPub = nh.advertise<switch_vis_exp::Output>("output",10);
+    ros::Publisher outputPub = streetMultiBot ? nh.advertise<switch_vis_exp::Output>(targetName+"/output",10) : nh.advertise<switch_vis_exp::Output>("output",10);
     
     // Subscribers
-    DataHandler callbacks(tfl, visibilityTimeout, intWindow, mu, cov, etaStack, scriptFstack, scriptYstack);
+    DataHandler callbacks(tfl, visibilityTimeout, intWindow, mu, cov, etaStack, scriptFstack, scriptYstack, term1, term2);
     ros::Subscriber camVelSub = nh.subscribe(imageName+"/body_vel",1,&DataHandler::camVelCB,&callbacks);
     ros::Subscriber targetVelSub = nh.subscribe(targetName+"/body_vel",1,&DataHandler::targetVelCB,&callbacks);
     ros::Subscriber targetPoseSub = nh.subscribe("markers",1,&DataHandler::targetPoseCB,&callbacks);
@@ -716,16 +738,18 @@ int main(int argc, char** argv)
     mapHeight = 2*b;
     //genData(x0, y0, mapWidth, mapHeight, mu, cov, fillAmount, etaStack, scriptFstack, scriptYstack);
     
+    ROS_INFO("%s: here1",targetName.c_str());
+    
+    ros::AsyncSpinner spinner(4); // Use 4 threads
+    spinner.start();
+    
     // Wait for initial data
     while(!callbacks.gotData) {
         ros::spinOnce();
         ros::Duration(0.2).sleep();
     }
     
-    ros::AsyncSpinner spinner(4); // Use 4 threads
-    spinner.start();
-    
-    ROS_INFO("here Main");
+    ROS_INFO("%s: here Main",targetName.c_str());
     
     // Main loop
     std::mutex m;
@@ -734,8 +758,6 @@ int main(int argc, char** argv)
     double lastTime = ros::Time::now().toSec();
     Eigen::Matrix<double,7,1> etaHat = Eigen::Matrix<double,7,1>::Zero();
     Eigen::Matrix<double,Eigen::Dynamic,1> thetaHat = Eigen::Matrix<double,Eigen::Dynamic,1>::Zero(6*numKernal);
-    Eigen::MatrixXd term1 = scriptYstack.transpose()*(etaStack - scriptFstack);
-    Eigen::MatrixXd term2 = -1*scriptYstack.transpose()*scriptYstack;
     ros::Rate r(300);
     while (ros::ok())
     {
@@ -775,7 +797,20 @@ int main(int argc, char** argv)
                 etaStack = Eigen::Map<Eigen::VectorXd>(&srv.response.etaStack[0],etaStack.size());
                 scriptFstack = Eigen::Map<Eigen::VectorXd>(&srv.response.scriptFstack[0],scriptFstack.size());
                 scriptYstack = Eigen::Map<Eigen::MatrixXd>(&srv.response.scriptYstack[0],scriptYstack.rows(),scriptYstack.cols());
+                term1 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term1[0],term1.rows(),term1.cols());
+                term2 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term2[0],term2.rows(),term2.cols());
                 m.unlock();
+                
+                //Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
+                //Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
+                
+                //m.lock();
+                //term1 = tempTerm1;
+                //term2 = tempTerm2;
+                //m.unlock();
+                
+                std::cout << targetName+" got data" << std::endl;
+                //std::cout << targetName+": got data. Ystack:" << std::endl << scriptYstack << std::endl;
             }
         }
         
@@ -874,6 +909,8 @@ int main(int argc, char** argv)
         
         r.sleep();
     }
+    
+    ros::waitForShutdown();
     
     return 0;
 }

@@ -2,3 +2,5 @@
 float64[] etaStack
 float64[] scriptFstack
 float64[] scriptYstack
+float64[] term1
+float64[] term2

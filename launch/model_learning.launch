@@ -3,7 +3,7 @@
 <launch>
     <arg name="sim" default="true" />
     <arg name="recordData" default="false" /> <!-- record to rosbag -->
-    <arg name="artificialSwitching" default="true" />
+    <arg name="artificialSwitching" default="false" />
     <arg name="joySwitching" default="false" />
     <arg name="streets" default="false" />
     <arg name="streetMultiBot" default="false" />
@@ -14,7 +14,7 @@
     <arg name="x0" default="-1.0" />
     <arg name="y0" default="0.0" />
 -->
-    <arg name="x0" default="-0.5" />
+    <arg name="x0" default="0.5" />
     <arg name="y0" default="0.0" />
     
     <node pkg="switch_vis_exp" type="model_learning_node" name="estimator" output="screen" >
@@ -27,11 +27,13 @@
       <param name="y0" value="$(arg y0)" />
       <param name="streets" value="$(arg streets)" />
       <param name="imageName" value="$(arg imageName)" />
+      <rosparam param="delTon">[3,5]</rosparam>
+      <rosparam param="delToff">[1,4]</rosparam>
     </node>
     
     <node pkg="switch_vis_exp" type="model_learning_node" name="estimator2" if="$(arg streetMultiBot)" output="screen" >
-      <param name="artificialSwitching" value="$(arg artificialSwitching)" />
-      <param name="joySwitching" value="$(arg joySwitching)" />
+      <param name="artificialSwitching" value="false" />
+      <param name="joySwitching" value="true" />
       <param name="streetMultiBot" value="$(arg streetMultiBot)" />
       <param name="a" value="$(arg a)" />
       <param name="b" value="$(arg b)" />
@@ -41,6 +43,8 @@
       <param name="imageName" value="$(arg imageName)" />
       <param name="targetName" value="ugv1" />
       <param name="markerID" value="200" type="str" />
+      <rosparam param="delTon">[3,5]</rosparam>
+      <rosparam param="delToff">[1,4]</rosparam>
     </node>
     
     <group if="$(arg sim)" >
@@ -56,8 +60,14 @@
           <param name="y0" value="$(arg y0)" /> <!-- track center -->
           <param name="k1" value="0.5" />
           <param name="k2" value="0.5" />
-          <param name="doRotation" value="false" />
+          <param name="doRotation" value="true" />
           <param name="streets" value="$(arg streets)" />
+          <param name="streetSpeed" value="0.3" />
+        </node>
+        
+        <!-- joystick -->
+        <node pkg="joy" type="joy_node" name="joy_node">
+          <param name="dev" value="/dev/input/js1"/>
         </node>
     </group>
     
@@ -69,11 +79,6 @@
         <param name="fps" value="30" />
         <param name="max_depth_range" value="0.0" />
     </node>
-    <node if="$(arg recordData)" name="record_data" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/model_learning/random.bag /output /camera/camera_info /markers /ugv0/pose /ugv0/odom /ugv0/body_vel /image/pose /image/body_vel /tf" />
+    <node if="$(arg recordData)" name="record_data" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/model_learning/random.bag /output /ugv0/output /ugv1/output /camera/camera_info /markers /ugv0/pose /ugv0/odom /ugv0/body_vel /ugv1/pose /ugv1/odom /ugv1/body_vel /$(arg imageName)/pose /$(arg imageName)/body_vel /tf" />
 
-    
-    <!-- joystick -->
-    <node pkg="joy" type="joy_node" name="joy_node">
-      <param name="dev" value="/dev/input/js1"/>
-    </node>
 </launch>

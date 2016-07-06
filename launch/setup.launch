@@ -10,8 +10,8 @@
   <arg name="showViz" default="true" /> <!-- Launch rviz -->
   <arg name="a" default="1.5" /> <!-- track width -->
   <arg name="b" default="1.5" /> <!-- track height -->
-  <arg name="x0" default="0.25" /> <!-- track center -->
-  <arg name="y0" default="0.0" /> <!-- track center -->
+  <arg name="x0" default="3.0" /> <!-- track center -->
+  <arg name="y0" default="0.1" /> <!-- track center -->
   
   <!-- Launch motion capture system listener -->
   <include file="$(find mocap_optitrack)/launch/mocap.launch" />
@@ -75,9 +75,10 @@
       <param name="y0" value="$(arg y0)" /> <!-- track center -->
       <param name="k1" value="0.5" />
       <param name="k2" value="0.5" />
-      <param name="streetSpeed" value="0.7" />
+      <param name="streetSpeed" value="0.3" />
       <param name="streets" value="$(arg streets)" />
       <param name="allowBacktrack" value="$(arg streetMultiBot)" />
+      <param name="streetScale" value="2.2" />
     </node>
     <node pkg="switch_vis_exp" type="turtlebot_control_node" name="turtlebot_control0" ns="ugv0" output="screen" >
       <param name="loopRate" value="50.0" />
