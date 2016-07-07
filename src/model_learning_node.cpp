@@ -194,12 +194,14 @@ class DataHandler
     bool joyEstimatorOn;
     
     // data transfer
-    ros::ServiceServer service;
-    const Eigen::VectorXd *etaStack;
-    const Eigen::VectorXd *scriptFstack;
-    const Eigen::MatrixXd *scriptYstack;
-    const Eigen::MatrixXd *term1;
-    const Eigen::MatrixXd *term2;
+    std::mutex *m;
+    ros::ServiceServer dataTransferService;
+    ros::ServiceClient dataTransferServiceClient;
+    Eigen::VectorXd *etaStack;
+    Eigen::VectorXd *scriptFstack;
+    Eigen::MatrixXd *scriptYstack;
+    Eigen::MatrixXd *term1;
+    Eigen::MatrixXd *term2;
     
 public:
     Eigen::Vector3d vCc;
@@ -212,14 +214,14 @@ public:
     
     bool estimatorOn;
     bool gotData;
-    bool transferData;
+    //bool transferData;
     
     Eigen::Matrix<double, 7, 1> eta;
     Eigen::Matrix<double, 7, 1> scriptEta;
     Eigen::Matrix<double, 7, 1> scriptF;
     Eigen::MatrixXd scriptY;
     
-    DataHandler(tf::TransformListener& tflIn, double visibilityTimeout, double intWindowIn, const Eigen::MatrixXd& muIn, const Eigen::MatrixXd& covIn, const Eigen::VectorXd& etaStackIn, const Eigen::VectorXd& scriptFstackIn, const Eigen::MatrixXd& scriptYstackIn, const Eigen::MatrixXd& term1in, const Eigen::MatrixXd& term2in) : tfl(tflIn)
+    DataHandler(tf::TransformListener& tflIn, double visibilityTimeout, double intWindowIn, const Eigen::MatrixXd& muIn, const Eigen::MatrixXd& covIn, Eigen::VectorXd& etaStackIn, Eigen::VectorXd& scriptFstackIn, Eigen::MatrixXd& scriptYstackIn, Eigen::MatrixXd& term1in, Eigen::MatrixXd& term2in, std::mutex& mIn) : tfl(tflIn)
     {
         ros::NodeHandle nhp("~");
         nhp.param<std::string>("markerID",markerID,"100");
@@ -232,7 +234,8 @@ public:
         std::vector<double> delToffDefault; delToffDefault.push_back(10.0); delToffDefault.push_back(20.0);
         nhp.param< std::vector<double> >("delTon", delTon, delTonDefault);
         nhp.param< std::vector<double> >("delToff", delToff, delToffDefault);
-        service = nh.advertiseService(targetName+"/get_cl_data", &DataHandler::transfer_data,this);
+        dataTransferService = nh.advertiseService(targetName+"/get_cl_data", &DataHandler::transfer_data,this);
+        dataTransferServiceClient = targetName == "ugv0" ? nh.serviceClient<switch_vis_exp::CLdata>("ugv1/get_cl_data") : nh.serviceClient<switch_vis_exp::CLdata>("ugv0/get_cl_data");
         
         if (targetName == "ugv0")
         {
@@ -252,12 +255,13 @@ public:
         mu = muIn;
         cov = covIn;
         gotData = false;
-        transferData = false;
+        //transferData = false;
         etaStack = &etaStackIn;
         scriptFstack = &scriptFstackIn;
         scriptYstack = &scriptYstackIn;
         term1 = &term1in;
         term2 = &term2in;
+        m = &mIn;
         
         // Initialize
         vCc << 0,0,0;
@@ -348,21 +352,64 @@ public:
     {
         if (joySwitching)
         {
+            //if ((!joyEstimatorOn) and (joyMsg->buttons[joySwitchButton]))
+            //{
+                
+                //if (dataTransferServiceClient.call(srv))
+                //{
+                    //m->lock();
+                    //*etaStack = Eigen::Map<Eigen::VectorXd>(&srv.response.etaStack[0],etaStack->size());
+                    //*scriptFstack = Eigen::Map<Eigen::VectorXd>(&srv.response.scriptFstack[0],scriptFstack->size());
+                    //*scriptYstack = Eigen::Map<Eigen::MatrixXd>(&srv.response.scriptYstack[0],scriptYstack->rows(),scriptYstack->cols());
+                    //*term1 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term1[0],term1->rows(),term1->cols());
+                    //*term2 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term2[0],term2->rows(),term2->cols());
+                    //m->unlock();
+                    
+                    ////Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
+                    ////Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
+                    
+                    ////m.lock();
+                    ////term1 = tempTerm1;
+                    ////term2 = tempTerm2;
+                    ////m.unlock();
+                    
+                    //std::cout << targetName+" got data" << std::endl;
+                    ////std::cout << targetName+": got data. Ystack:" << std::endl << scriptYstack << std::endl;
+                //}
+            //}
             joyEstimatorOn = (bool) joyMsg->buttons[joySwitchButton];
             estimatorOn &= joyEstimatorOn;
         }
-        transferData = (bool) joyMsg->buttons[dataTransferButton];
+        //transferData = (bool) joyMsg->buttons[dataTransferButton];
+        if (joyMsg->buttons[dataTransferButton]) // transfer data
+        {
+            switch_vis_exp::CLdata srv;
+            if (dataTransferServiceClient.call(srv))
+            {
+                m->lock();
+                *etaStack = Eigen::Map<Eigen::VectorXd>(&srv.response.etaStack[0],etaStack->size());
+                *scriptFstack = Eigen::Map<Eigen::VectorXd>(&srv.response.scriptFstack[0],scriptFstack->size());
+                *scriptYstack = Eigen::Map<Eigen::MatrixXd>(&srv.response.scriptYstack[0],scriptYstack->rows(),scriptYstack->cols());
+                *term1 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term1[0],term1->rows(),term1->cols());
+                *term2 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term2[0],term2->rows(),term2->cols());
+                m->unlock();
+                
+                std::cout << targetName+" got data" << std::endl;
+            }
+        }
     }
     
     bool transfer_data(switch_vis_exp::CLdata::Request &req,switch_vis_exp::CLdata::Response &resp)
     {
         //std::cout << targetName+": sent data. Ystack:" << std::endl << *scriptYstack << std::endl;
         std::cout << targetName+" sent data" << std::endl;
+        m->lock();
         resp.etaStack = std::vector<double>(etaStack->data(), etaStack->data() + etaStack->size());
         resp.scriptFstack = std::vector<double>(scriptFstack->data(), scriptFstack->data() + scriptFstack->size());
         resp.scriptYstack = std::vector<double>(scriptYstack->data(), scriptYstack->data() + scriptYstack->size());
         resp.term1 = std::vector<double>(term1->data(), term1->data() + term1->size());
         resp.term2 = std::vector<double>(term2->data(), term2->data() + term2->size());
+        m->unlock();
         
         //resp.etaStack.resize(etaStack->size());
         //Eigen::VectorXd::Map(&resp.etaStack[0],etaStack->size()) = *etaStack;
@@ -686,17 +733,15 @@ int main(int argc, char** argv)
     double k2 = 0.1;
     double kCL = 1;
     double intWindow = 0.1;
-    int CLstackSize = 1500;
+    int CLstackSize = 2000;
     int stackFill = 0;
-    double visibilityTimeout = 0.06;
+    double visibilityTimeout = 0.1;
     bool artificialSwitching, streetMultiBot;
     nhp.param<bool>("artificialSwitching", artificialSwitching, false);
     nhp.param<bool>("streetMultiBot",streetMultiBot,false); //Hz
     std::string imageName, targetName;
     nhp.param<std::string>("imageName", imageName, "image");
     nhp.param<std::string>("targetName", targetName, "ugv0");
-    ros::ServiceClient dataTransferServiceClient;
-    dataTransferServiceClient = targetName == "ugv0" ? nh.serviceClient<switch_vis_exp::CLdata>("ugv1/get_cl_data") : nh.serviceClient<switch_vis_exp::CLdata>("ugv0/get_cl_data");
     
     // Initialize Neural Network
     bool streets;
@@ -721,7 +766,8 @@ int main(int argc, char** argv)
     ros::Publisher outputPub = streetMultiBot ? nh.advertise<switch_vis_exp::Output>(targetName+"/output",10) : nh.advertise<switch_vis_exp::Output>("output",10);
     
     // Subscribers
-    DataHandler callbacks(tfl, visibilityTimeout, intWindow, mu, cov, etaStack, scriptFstack, scriptYstack, term1, term2);
+    std::mutex m;
+    DataHandler callbacks(tfl, visibilityTimeout, intWindow, mu, cov, etaStack, scriptFstack, scriptYstack, term1, term2, m);
     ros::Subscriber camVelSub = nh.subscribe(imageName+"/body_vel",1,&DataHandler::camVelCB,&callbacks);
     ros::Subscriber targetVelSub = nh.subscribe(targetName+"/body_vel",1,&DataHandler::targetVelCB,&callbacks);
     ros::Subscriber targetPoseSub = nh.subscribe("markers",1,&DataHandler::targetPoseCB,&callbacks);
@@ -752,7 +798,6 @@ int main(int argc, char** argv)
     ROS_INFO("%s: here Main",targetName.c_str());
     
     // Main loop
-    std::mutex m;
     std::atomic<bool> stackUpdateDone(true);
     std::thread stackThread;
     double lastTime = ros::Time::now().toSec();
@@ -787,32 +832,32 @@ int main(int argc, char** argv)
         Eigen::Matrix<double,7,1> phi;
         Eigen::Matrix<double,7,1> phiHat;
         
-        // Sync data with other estimator (for multiBot estimation)
-        if (streetMultiBot and callbacks.transferData)
-        {
-            switch_vis_exp::CLdata srv;
-            if (dataTransferServiceClient.call(srv))
-            {
-                m.lock();
-                etaStack = Eigen::Map<Eigen::VectorXd>(&srv.response.etaStack[0],etaStack.size());
-                scriptFstack = Eigen::Map<Eigen::VectorXd>(&srv.response.scriptFstack[0],scriptFstack.size());
-                scriptYstack = Eigen::Map<Eigen::MatrixXd>(&srv.response.scriptYstack[0],scriptYstack.rows(),scriptYstack.cols());
-                term1 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term1[0],term1.rows(),term1.cols());
-                term2 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term2[0],term2.rows(),term2.cols());
-                m.unlock();
-                
-                //Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
-                //Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
-                
+        //// Sync data with other estimator (for multiBot estimation)
+        //if (streetMultiBot and callbacks.transferData)
+        //{
+            //switch_vis_exp::CLdata srv;
+            //if (dataTransferServiceClient.call(srv))
+            //{
                 //m.lock();
-                //term1 = tempTerm1;
-                //term2 = tempTerm2;
+                //etaStack = Eigen::Map<Eigen::VectorXd>(&srv.response.etaStack[0],etaStack.size());
+                //scriptFstack = Eigen::Map<Eigen::VectorXd>(&srv.response.scriptFstack[0],scriptFstack.size());
+                //scriptYstack = Eigen::Map<Eigen::MatrixXd>(&srv.response.scriptYstack[0],scriptYstack.rows(),scriptYstack.cols());
+                //term1 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term1[0],term1.rows(),term1.cols());
+                //term2 = Eigen::Map<Eigen::MatrixXd>(&srv.response.term2[0],term2.rows(),term2.cols());
                 //m.unlock();
                 
-                std::cout << targetName+" got data" << std::endl;
-                //std::cout << targetName+": got data. Ystack:" << std::endl << scriptYstack << std::endl;
-            }
-        }
+                ////Eigen::MatrixXd tempTerm1 = scriptYstack.transpose()*(etaStack - scriptFstack);
+                ////Eigen::MatrixXd tempTerm2 = -1*scriptYstack.transpose()*scriptYstack;
+                
+                ////m.lock();
+                ////term1 = tempTerm1;
+                ////term2 = tempTerm2;
+                ////m.unlock();
+                
+                //std::cout << targetName+" got data" << std::endl;
+                ////std::cout << targetName+": got data. Ystack:" << std::endl << scriptYstack << std::endl;
+            //}
+        //}
         
         // Ground truth
         tf::StampedTransform tfRelPose;
@@ -905,6 +950,8 @@ int main(int argc, char** argv)
         outMsg.normalizedKinematics = false;
         outMsg.artificialSwitching = artificialSwitching;
         outMsg.useVelocityMap = true;
+        outMsg.streets = streets;
+        outMsg.multiBot = streetMultiBot;
         outputPub.publish(outMsg);
         
         r.sleep();

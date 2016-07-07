@@ -22,6 +22,7 @@ bool deadReckoning
 bool normalizedKinematics
 bool artificialSwitching
 bool useVelocityMap
-bool roadNetwork
+bool streets
+bool multiBot
 float64 delTon
 float64 delToff

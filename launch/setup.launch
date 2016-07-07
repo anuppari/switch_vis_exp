@@ -60,7 +60,8 @@
   <node pkg="switch_vis_exp" type="bebop_control_node" name="bebop_control_node" output="screen" >
     <param name="lazy" value="true" />
     <param name="kp" value="0.8" />
-    <param name="kw" value="1.5" />
+    <param name="kpd" value="0.5" />
+    <param name="kw" value="3.5" />
   </node>
   <node pkg="joy" type="joy_node" name="joy" output="screen" >
     <param name="dev" value="/dev/input/js1" />
@@ -75,7 +76,7 @@
       <param name="y0" value="$(arg y0)" /> <!-- track center -->
       <param name="k1" value="0.5" />
       <param name="k2" value="0.5" />
-      <param name="streetSpeed" value="0.3" />
+      <param name="streetSpeed" value="0.35" />
       <param name="streets" value="$(arg streets)" />
       <param name="allowBacktrack" value="$(arg streetMultiBot)" />
       <param name="streetScale" value="2.2" />

@@ -79,6 +79,16 @@
         <param name="fps" value="30" />
         <param name="max_depth_range" value="0.0" />
     </node>
+    <!-- Record data -->
+<!--
+    <node if="$(arg recordData)" name="record_video_overhead" pkg="image_view" type="video_recorder" >
+        <remap from="image" to="camera/image_raw" />
+        <remap from="camera_info" to="camera/camera_info" />
+        <param name="filename" value="/home/ncr/experiment_data/model_learning/video_overhead.avi" />
+        <param name="fps" value="30" />
+        <param name="max_depth_range" value="0.0" />
+    </node>
+-->
     <node if="$(arg recordData)" name="record_data" pkg="rosbag" type="record" args="-o /home/ncr/experiment_data/model_learning/random.bag /output /ugv0/output /ugv1/output /camera/camera_info /markers /ugv0/pose /ugv0/odom /ugv0/body_vel /ugv1/pose /ugv1/odom /ugv1/body_vel /$(arg imageName)/pose /$(arg imageName)/body_vel /tf" />
 
 </launch>

@@ -132,8 +132,8 @@ public:
             // Desired velocity
             tf::Vector3 desLinVel = kp*(desPos - bebopPoseTF.getOrigin()) + kpd*(targetLinVel - bebopLinVel);
             tf::Vector3 desAngVel = kw*((bebopPoseTF.getBasis()*tf::Vector3(1,0,0)).cross(desForward));
-            desBodyLinVel = bebopPoseTF.getBasis().inverse()*desLinVel + tf::Vector3(0,0.4*joyAngVel.getZ(),0);
-            desBodyAngVel = bebopPoseTF.getBasis().inverse()*desAngVel + tf::Vector3(0,0,-0.5*joyAngVel.getZ());
+            desBodyLinVel = sat(bebopPoseTF.getBasis().inverse()*desLinVel,0.4) + tf::Vector3(0,0.4*joyAngVel.getZ(),0);
+            desBodyAngVel = sat(bebopPoseTF.getBasis().inverse()*desAngVel,0.4) + tf::Vector3(0,0,-0.5*joyAngVel.getZ());
         }
         else
         {
@@ -223,6 +223,11 @@ public:
             filtered_value = input_value;
         }
         return filtered_value;
+    }
+    
+    tf::Vector3 sat(const tf::Vector3 v, double val)
+    {
+        return v*val/std::max(val,v.length());
     }
     
 }; // end bebop_control
